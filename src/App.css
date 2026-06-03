@@ -248,6 +248,16 @@ h1 {
   padding: 0 10px;
 }
 
+.action-grid button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.spin-icon,
+.export-spinner svg {
+  animation: export-spin 0.9s linear infinite;
+}
+
 .error {
   padding: 12px 14px;
   border-radius: 16px;
@@ -493,6 +503,85 @@ h1 {
   line-height: 1.75;
 }
 
+.export-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 45% 42%, rgba(255, 215, 102, 0.2), transparent 28%),
+    rgba(30, 24, 42, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+.export-loading-card {
+  min-width: min(320px, 100%);
+  padding: 26px 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 241, 0.9)),
+    radial-gradient(circle at top right, rgba(255, 110, 158, 0.18), transparent 44%);
+  box-shadow: 0 24px 80px rgba(30, 24, 42, 0.2);
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.export-loading-card strong {
+  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.export-loading-card span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.export-toast {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 31;
+  padding: 13px 18px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #17131f, #6844ec 72%, #ff6e9e);
+  box-shadow: 0 16px 40px rgba(43, 35, 58, 0.22);
+  font-weight: 800;
+  animation: toast-rise 0.22s ease-out;
+}
+
+.export-spinner {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #6844ec, #ff6e9e);
+  box-shadow: 0 14px 30px rgba(104, 68, 236, 0.24);
+}
+
+@keyframes export-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes toast-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 980px) {
   .app-shell { padding: 18px; }
   .hero-section,
@@ -512,4 +601,5 @@ h1 {
   .section-title { align-items: flex-start; flex-direction: column; }
   .result-summary { grid-template-columns: 1fr; }
   .legend { grid-template-columns: 1fr; }
+  .export-toast { right: 14px; bottom: 14px; left: 14px; justify-content: center; text-align: center; }
 }

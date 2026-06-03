@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Grid3X3, ImageUp, Info, Printer, RotateCcw, Sparkles } from 'lucide-react'
+import { Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import { saveAs } from 'file-saver'
 import './App.css'
@@ -86,10 +86,13 @@ function App() {
   const [pattern, setPattern] = useState<BeadCell[][]>([])
   const [palette, setPalette] = useState<PaletteColor[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportNotice, setExportNotice] = useState('')
   const [error, setError] = useState('')
   const patternRef = useRef<HTMLDivElement>(null)
   const paperViewportRef = useRef<HTMLDivElement>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
+  const exportNoticeTimerRef = useRef<number | null>(null)
   const [paperScale, setPaperScale] = useState(1)
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
@@ -121,6 +124,10 @@ function App() {
       window.removeEventListener('resize', updateScales)
     }
   }, [pattern, gridCols, gridRows, cellSize])
+
+  useEffect(() => () => {
+    if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
+  }, [])
 
 
   async function generatePattern(file: File, nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
@@ -205,9 +212,24 @@ function App() {
   }
 
   async function exportPng() {
-    if (!patternRef.current) return
-    const dataUrl = await toPng(patternRef.current, { pixelRatio: 4, backgroundColor: '#fffaf1' })
-    saveAs(dataUrl, `拼豆图纸-${sourceName || 'pattern'}.png`)
+    if (!patternRef.current || isExporting) return
+    setIsExporting(true)
+    setExportNotice('')
+    const startedAt = Date.now()
+    try {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const dataUrl = await toPng(patternRef.current, { pixelRatio: 4, backgroundColor: '#fffaf1' })
+      saveAs(dataUrl, `拼豆图纸-${sourceName || 'pattern'}.png`)
+      setExportNotice('PNG 已开始下载')
+      if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
+      exportNoticeTimerRef.current = window.setTimeout(() => setExportNotice(''), 2800)
+    } catch (cause) {
+      setError(cause instanceof Error ? `导出失败：${cause.message}` : '导出失败，请稍后重试')
+    } finally {
+      const elapsed = Date.now() - startedAt
+      if (elapsed < 600) await new Promise((resolve) => window.setTimeout(resolve, 600 - elapsed))
+      setIsExporting(false)
+    }
   }
 
   function renderGrid() {
@@ -295,7 +317,10 @@ function App() {
 
           <div className="action-grid">
             <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing}><RotateCcw size={17} /> 重新生成</button>
-            <button type="button" onClick={() => void exportPng()} disabled={!pattern.length}><Download size={17} /> 导出 PNG</button>
+            <button type="button" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
+              {isExporting ? <LoaderCircle className="spin-icon" size={17} /> : <Download size={17} />}
+              {isExporting ? '导出中...' : '导出 PNG'}
+            </button>
           </div>
           {error && <p className="error">{error}</p>}
         </aside>
@@ -369,6 +394,24 @@ function App() {
           </div>
         </section>
       </section>
+
+      {isExporting && (
+        <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+          <div className="export-loading-card">
+            <div className="export-spinner" aria-hidden="true">
+              <LoaderCircle size={30} />
+            </div>
+            <strong>正在导出 PNG</strong>
+            <span>高清图纸生成中，请稍等一下…</span>
+          </div>
+        </div>
+      )}
+
+      {exportNotice && (
+        <div className="export-toast" role="status" aria-live="polite">
+          {exportNotice}
+        </div>
+      )}
     </main>
   )
 }
