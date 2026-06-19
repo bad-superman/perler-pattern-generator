@@ -4,9 +4,11 @@ import { toPng } from 'html-to-image'
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { AGNES_STYLE_PRESETS } from './agnes/styles'
+import { HAMA_PALETTE, HAMA_PALETTE_SIZE, type BeadPaletteEntry } from './palettes/hama'
 import './App.css'
 
 interface PaletteColor {
+  code: string
   name: string
   hex: string
   count: number
@@ -25,14 +27,6 @@ type SourceMode = 'local' | 'ai'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 
-const PERLER_PALETTE = [
-  ['白色', '#f8f7f0'], ['奶油', '#f4dfb6'], ['浅黄', '#ffd766'], ['黄色', '#f9b233'], ['橙色', '#ef7d32'],
-  ['浅粉', '#f7b6c8'], ['粉红', '#ee6f9f'], ['玫红', '#c83d7d'], ['红色', '#c93636'], ['酒红', '#7e2633'],
-  ['薰衣草', '#b7a6dc'], ['紫色', '#7955a3'], ['深紫', '#42316f'], ['浅蓝', '#8fc7e8'], ['蓝色', '#2d84c6'],
-  ['深蓝', '#22518b'], ['薄荷', '#9bd8bf'], ['绿色', '#51aa6b'], ['深绿', '#236042'], ['青色', '#38a7a5'],
-  ['棕色', '#8b5a36'], ['浅棕', '#c08a55'], ['灰色', '#9c9a94'], ['深灰', '#4f5358'], ['黑色', '#171717'],
-] as const
-
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
   return {
@@ -42,10 +36,10 @@ function hexToRgb(hex: string) {
   }
 }
 
-function nearestPaletteColor(r: number, g: number, b: number, palette: readonly (readonly [string, string])[]) {
+function nearestPaletteColor(r: number, g: number, b: number, palette: readonly BeadPaletteEntry[]) {
   let bestIndex = 0
   let bestDistance = Number.POSITIVE_INFINITY
-  palette.forEach(([, hex], index) => {
+  palette.forEach(([, , hex], index) => {
     const color = hexToRgb(hex)
     const distance = (r - color.r) ** 2 + (g - color.g) ** 2 + (b - color.b) ** 2
     if (distance < bestDistance) {
@@ -174,7 +168,7 @@ function App() {
         for (let x = 0; x < cols; x += 1) {
           const offset = (y * cols + x) * 4
           if (imageData.data[offset + 3] < 80) continue
-          sampled.push(nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], PERLER_PALETTE))
+          sampled.push(nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], HAMA_PALETTE))
         }
       }
 
@@ -187,13 +181,14 @@ function App() {
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
       const selectedPalette = selected.map((paletteIndex, index) => ({
-        name: PERLER_PALETTE[paletteIndex][0],
-        hex: PERLER_PALETTE[paletteIndex][1],
+        code: HAMA_PALETTE[paletteIndex][0],
+        name: HAMA_PALETTE[paletteIndex][1],
+        hex: HAMA_PALETTE[paletteIndex][2],
         count: 0,
         symbol: SYMBOLS[index] ?? String(index + 1),
       }))
 
-      const selectedColors = selected.map((index) => PERLER_PALETTE[index])
+      const selectedColors = selected.map((index) => HAMA_PALETTE[index])
       const grid: BeadCell[][] = []
       for (let y = 0; y < rows; y += 1) {
         const row: BeadCell[] = []
@@ -323,7 +318,7 @@ function App() {
         </div>
         <div className="sample-card" aria-label="拼豆说明">
           <div className="mini-board">
-            {Array.from({ length: 100 }).map((_, index) => <span key={index} style={{ background: PERLER_PALETTE[(index * 7) % PERLER_PALETTE.length][1] }} />)}
+            {Array.from({ length: 100 }).map((_, index) => <span key={index} style={{ background: HAMA_PALETTE[(index * 7) % HAMA_PALETTE.length][2] }} />)}
           </div>
           <p><strong>拼豆是什么？</strong>把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。</p>
         </div>
@@ -395,7 +390,7 @@ function App() {
 
           <label>
             <span>最大颜色数 <b>{maxColors}</b></span>
-            <input type="range" min="4" max="25" step="1" value={maxColors} onChange={(event) => {
+            <input type="range" min="4" max={HAMA_PALETTE_SIZE} step="1" value={maxColors} onChange={(event) => {
               const value = Number(event.target.value)
               setMaxColors(value)
               void regenerate(gridSize, value, shape)
@@ -443,7 +438,7 @@ function App() {
               <div>
                 <small>颜色</small>
                 <strong>{palette.length}</strong>
-                <span>已匹配拼豆色号</span>
+                <span>已匹配 Hama 色号</span>
               </div>
               <div>
                 <small>模式</small>
@@ -475,7 +470,7 @@ function App() {
                   {palette.map((color) => (
                     <div className="legend-item" key={color.symbol}>
                       <i style={{ background: color.hex }}>{color.symbol}</i>
-                      <span>{color.name}</span>
+                      <span>{color.code} {color.name}</span>
                       <b>{color.count}</b>
                     </div>
                   ))}
