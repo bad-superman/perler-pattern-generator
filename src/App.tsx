@@ -138,7 +138,14 @@ function App() {
   }, [])
 
 
-  async function generatePattern(file: File, nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
+  async function generatePattern(
+    file: File,
+    nextGridSize = gridSize,
+    nextMaxColors = maxColors,
+    nextShape = shape,
+    options?: { updatePreview?: boolean },
+  ) {
+    const updatePreview = options?.updatePreview ?? true
     setError('')
     setIsProcessing(true)
     lastSourceFileRef.current = file
@@ -147,8 +154,10 @@ function App() {
       const { cols, rows } = fitGridToImage(image, nextGridSize, nextShape)
       setGridCols(cols)
       setGridRows(rows)
-      setSourceName(file.name)
-      setSourcePreview(URL.createObjectURL(file))
+      if (updatePreview) {
+        setSourceName(file.name)
+        setSourcePreview(URL.createObjectURL(file))
+      }
 
       const canvas = document.createElement('canvas')
       canvas.width = cols
@@ -238,7 +247,7 @@ function App() {
         extraPrompt: aiPrompt,
         size,
       })
-      await generatePattern(aiFile)
+      await generatePattern(aiFile, gridSize, maxColors, shape, { updatePreview: false })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
     } finally {
@@ -248,7 +257,9 @@ function App() {
 
   async function regenerate(nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
     const file = lastSourceFileRef.current ?? uploadRef.current?.files?.[0]
-    if (file) await generatePattern(file, nextGridSize, nextMaxColors, nextShape)
+    if (file) {
+      await generatePattern(file, nextGridSize, nextMaxColors, nextShape, { updatePreview: sourceMode !== 'ai' })
+    }
   }
 
   async function exportPng() {
@@ -300,7 +311,7 @@ function App() {
         <div className="hero-copy">
           <div className="eyebrow"><Sparkles size={16} /> Perler Beads Pattern Maker</div>
           <h1>上传图片，一键生成可打印拼豆图纸</h1>
-          <p>支持本地转换与 AI 创作两种方式：纯前端量化现有图片，或通过 Agnes Image 2.1 Flash 生成更适合拼豆的中间图。</p>
+          <p>支持本地转换与 AI 创作两种方式：上传图片后可直接量化，或由 AI 生成更适合拼豆的中间图。</p>
           <div className="hero-actions">
             <button className="primary-btn" type="button" onClick={() => uploadRef.current?.click()}>
               <ImageUp size={18} /> 上传图片
@@ -336,7 +347,7 @@ function App() {
             <div className="ai-panel">
               <div className="ai-panel-head">
                 <span>AI 风格</span>
-                <small>基于 Agnes Image 2.1 Flash</small>
+                <small>选择风格后一键生成</small>
               </div>
               <div className="style-grid">
                 {AGNES_STYLE_PRESETS.map((style) => (
@@ -488,7 +499,7 @@ function App() {
               <LoaderCircle size={30} />
             </div>
             <strong>AI 正在生成图片</strong>
-            <span>Agnes Image 2.1 Flash 创作中，完成后将自动量化成拼豆图纸…</span>
+            <span>AI 创作中，完成后将自动量化成拼豆图纸…</span>
           </div>
         </div>
       )}
