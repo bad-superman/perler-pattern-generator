@@ -44,7 +44,7 @@ The app is `src/App.tsx` plus CSS and small modules under `src/agnes/` and `src/
 
 **Responsive scaling**: a `ResizeObserver` + window `resize` listener recomputes `paperScale` so the full pattern fits the preview viewport without horizontal overflow (the verify scripts assert this fit/centering). Scale is applied via the `--paper-scale` CSS variable.
 
-**Export**: `exportPng` uses `html-to-image`'s `toPng` on the pattern ref (at `pixelRatio: 4`) and saves via `file-saver`. Printing uses the native `window.print()`.
+**Export**: `exportPng` draws the pattern and legend directly on Canvas from in-memory `pattern`/`palette` state, then saves via `file-saver` (`toBlob`). Printing uses the native `window.print()`.
 
 **State coupling**: control changes (grid size, max colors, shape) call `regenerate`, which re-reads the last processed file from `lastSourceFileRef` (or the hidden upload input) and re-runs the full pipeline.
 

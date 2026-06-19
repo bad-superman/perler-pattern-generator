@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
-import { toPng } from 'html-to-image'
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { AGNES_STYLE_PRESETS } from './agnes/styles'
@@ -69,6 +68,146 @@ function fitGridToImage(image: HTMLImageElement, longSide: number, shape: BoardS
     return { cols: longSide, rows: Math.max(1, Math.round((longSide * image.height) / image.width)) }
   }
   return { cols: Math.max(1, Math.round((longSide * image.width) / image.height)), rows: longSide }
+}
+
+function isDarkHex(hex: string) {
+  return Number.parseInt(hex.slice(1), 16) < 0x777777
+}
+
+function sanitizeExportFilename(name: string) {
+  const base = name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_').trim()
+  return base.slice(0, 80) || 'pattern'
+}
+
+function formatExportError(cause: unknown) {
+  if (cause instanceof Error) return cause.message
+  if (typeof cause === 'string') return cause
+  if (cause && typeof cause === 'object' && 'message' in cause) {
+    return String((cause as { message: unknown }).message)
+  }
+  return '浏览器资源限制或内存不足'
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png') {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob)
+      else reject(new Error('无法生成 PNG'))
+    }, type)
+  })
+}
+
+function buildPatternExportCanvas(
+  pattern: BeadCell[][],
+  palette: PaletteColor[],
+  gridCols: number,
+  gridRows: number,
+  renderMode: RenderMode,
+  activeCells: number,
+) {
+  const exportCell = 16
+  const gap = 1
+  const gridPad = 12
+  const gridInnerW = gridCols * exportCell + Math.max(0, gridCols - 1) * gap
+  const gridInnerH = gridRows * exportCell + Math.max(0, gridRows - 1) * gap
+  const gridW = gridInnerW + gridPad * 2
+  const gridH = gridInnerH + gridPad * 2
+
+  const legendCols = Math.min(4, Math.max(1, palette.length))
+  const legendRows = Math.ceil(palette.length / legendCols)
+  const legendItemW = 220
+  const legendItemH = 28
+  const legendPad = 24
+  const legendW = legendCols * legendItemW + legendPad * 2
+  const legendH = legendRows * legendItemH + legendPad * 2 + 28
+
+  const margin = 32
+  const headerH = 72
+  const contentW = Math.max(gridW, legendW, 640)
+  const canvas = document.createElement('canvas')
+  canvas.width = contentW + margin * 2
+  canvas.height = headerH + gridH + 24 + legendH + margin
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('浏览器不支持 Canvas')
+
+  ctx.fillStyle = '#fffaf1'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  ctx.fillStyle = '#1d1a23'
+  ctx.font = '700 24px "Noto Sans SC", sans-serif'
+  ctx.fillText('拼豆图纸', margin, margin + 24)
+  ctx.font = '400 14px "Noto Sans SC", sans-serif'
+  ctx.fillStyle = '#6f647d'
+  ctx.fillText(`${gridCols}×${gridRows} · ${activeCells.toLocaleString()} 颗豆 · ${palette.length} 色`, margin, margin + 48)
+
+  const gridX = margin + (contentW - gridW) / 2
+  const gridY = headerH
+  ctx.fillStyle = '#2a2633'
+  roundRect(ctx, gridX, gridY, gridW, gridH, 18)
+  ctx.fill()
+
+  for (let y = 0; y < gridRows; y += 1) {
+    for (let x = 0; x < gridCols; x += 1) {
+      const cell = pattern[y][x]
+      const px = gridX + gridPad + x * (exportCell + gap)
+      const py = gridY + gridPad + y * (exportCell + gap)
+      ctx.fillStyle = cell.hex
+      ctx.fillRect(px, py, exportCell, exportCell)
+      if (renderMode === 'symbols') {
+        ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
+        ctx.font = `700 ${Math.max(8, Math.floor(exportCell * 0.55))}px "Noto Sans SC", sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(cell.symbol, px + exportCell / 2, py + exportCell / 2 + 0.5)
+      }
+    }
+  }
+
+  const legendX = margin + (contentW - legendW) / 2
+  const legendY = gridY + gridH + 24
+  ctx.fillStyle = '#1d1a23'
+  ctx.font = '700 16px "Noto Sans SC", sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText('色号清单', legendX + legendPad, legendY + 20)
+
+  palette.forEach((color, index) => {
+    const col = index % legendCols
+    const row = Math.floor(index / legendCols)
+    const x = legendX + legendPad + col * legendItemW
+    const y = legendY + 36 + row * legendItemH
+    ctx.fillStyle = color.hex
+    ctx.fillRect(x, y + 4, 20, 20)
+    ctx.strokeStyle = 'rgba(43, 35, 58, 0.18)'
+    ctx.strokeRect(x + 0.5, y + 4.5, 19, 19)
+    ctx.fillStyle = isDarkHex(color.hex) ? '#fff' : '#1d1a23'
+    ctx.font = '700 11px "Noto Sans SC", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(color.symbol, x + 10, y + 14)
+    ctx.fillStyle = '#1d1a23'
+    ctx.font = '400 13px "Noto Sans SC", sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`${color.code} ${color.name}`, x + 28, y + 14)
+    ctx.textAlign = 'right'
+    ctx.fillStyle = '#6f647d'
+    ctx.fillText(String(color.count), x + legendItemW - 12, y + 14)
+  })
+
+  return canvas
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const radius = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + w, y, x + w, y + h, radius)
+  ctx.arcTo(x + w, y + h, x, y + h, radius)
+  ctx.arcTo(x, y + h, x, y, radius)
+  ctx.arcTo(x, y, x + w, y, radius)
+  ctx.closePath()
 }
 
 function App() {
@@ -258,19 +397,20 @@ function App() {
   }
 
   async function exportPng() {
-    if (!patternRef.current || isExporting) return
+    if (!pattern.length || isExporting) return
     setIsExporting(true)
     setExportNotice('')
     const startedAt = Date.now()
     try {
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-      const dataUrl = await toPng(patternRef.current, { pixelRatio: 4, backgroundColor: '#fffaf1' })
-      saveAs(dataUrl, `拼豆图纸-${sourceName || 'pattern'}.png`)
+      await document.fonts.ready
+      const canvas = buildPatternExportCanvas(pattern, palette, gridCols, gridRows, renderMode, activeCells)
+      const blob = await canvasToBlob(canvas)
+      saveAs(blob, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)
       setExportNotice('PNG 已开始下载')
       if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
       exportNoticeTimerRef.current = window.setTimeout(() => setExportNotice(''), 2800)
     } catch (cause) {
-      setError(cause instanceof Error ? `导出失败：${cause.message}` : '导出失败，请稍后重试')
+      setError(`导出失败：${formatExportError(cause)}`)
     } finally {
       const elapsed = Date.now() - startedAt
       if (elapsed < 600) await new Promise((resolve) => window.setTimeout(resolve, 600 - elapsed))
@@ -291,7 +431,7 @@ function App() {
         {pattern.flat().map((cell, index) => (
           <span
             key={`${index}-${cell.symbol}`}
-            style={{ background: cell.hex, color: cell.colorIndex >= 0 && Number.parseInt(cell.hex.slice(1), 16) < 0x777777 ? '#fff' : '#1d1a23' }}
+            style={{ background: cell.hex, color: isDarkHex(cell.hex) ? '#fff' : '#1d1a23' }}
           >
             {renderMode === 'symbols' ? cell.symbol : ''}
           </span>
