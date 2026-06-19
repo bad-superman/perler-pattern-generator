@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:proxy": "node server/agnes-proxy.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pages:dev": "npm run build && wrangler pages dev dist"
   },
   "dependencies": {
     "@fontsource/noto-sans-sc": "^5.2.9",
@@ -31,6 +33,7 @@
     "playwright": "^1.60.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "wrangler": "^4.24.0"
   }
 }

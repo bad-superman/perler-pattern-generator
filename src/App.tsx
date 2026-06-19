@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles } from 'lucide-react'
+import { Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import { saveAs } from 'file-saver'
+import { generateAgnesImage, pickAgnesSize } from './agnes/client'
+import { AGNES_STYLE_PRESETS } from './agnes/styles'
 import './App.css'
 
 interface PaletteColor {
@@ -19,6 +21,7 @@ interface BeadCell {
 
 type BoardShape = 'ratio' | 'square'
 type RenderMode = 'symbols' | 'solid'
+type SourceMode = 'local' | 'ai'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 
@@ -85,13 +88,18 @@ function App() {
   const [renderMode, setRenderMode] = useState<RenderMode>('symbols')
   const [pattern, setPattern] = useState<BeadCell[][]>([])
   const [palette, setPalette] = useState<PaletteColor[]>([])
+  const [sourceMode, setSourceMode] = useState<SourceMode>('local')
+  const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
+  const [aiPrompt, setAiPrompt] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isAiGenerating, setIsAiGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [exportNotice, setExportNotice] = useState('')
   const [error, setError] = useState('')
   const patternRef = useRef<HTMLDivElement>(null)
   const paperViewportRef = useRef<HTMLDivElement>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
+  const lastSourceFileRef = useRef<File | null>(null)
   const exportNoticeTimerRef = useRef<number | null>(null)
   const [paperScale, setPaperScale] = useState(1)
 
@@ -133,6 +141,7 @@ function App() {
   async function generatePattern(file: File, nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
     setError('')
     setIsProcessing(true)
+    lastSourceFileRef.current = file
     try {
       const image = await loadImage(file)
       const { cols, rows } = fitGridToImage(image, nextGridSize, nextShape)
@@ -203,11 +212,42 @@ function App() {
 
   async function handleFile(file?: File) {
     if (!file) return
+    if (sourceMode === 'ai') {
+      setSourceName(file.name)
+      setSourcePreview(URL.createObjectURL(file))
+      setError('')
+      return
+    }
     await generatePattern(file)
   }
 
+  async function generateWithAi() {
+    const refFile = uploadRef.current?.files?.[0]
+    if (!refFile) {
+      setError('请先上传一张参考图')
+      return
+    }
+
+    setError('')
+    setIsAiGenerating(true)
+    try {
+      const size = await pickAgnesSize(refFile, shape)
+      const aiFile = await generateAgnesImage({
+        file: refFile,
+        styleId: aiStyleId,
+        extraPrompt: aiPrompt,
+        size,
+      })
+      await generatePattern(aiFile)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
+    } finally {
+      setIsAiGenerating(false)
+    }
+  }
+
   async function regenerate(nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
-    const file = uploadRef.current?.files?.[0]
+    const file = lastSourceFileRef.current ?? uploadRef.current?.files?.[0]
     if (file) await generatePattern(file, nextGridSize, nextMaxColors, nextShape)
   }
 
@@ -260,7 +300,7 @@ function App() {
         <div className="hero-copy">
           <div className="eyebrow"><Sparkles size={16} /> Perler Beads Pattern Maker</div>
           <h1>上传图片，一键生成可打印拼豆图纸</h1>
-          <p>纯前端处理图片，按原图比例生成高清拼豆网格，方便直接查看、导出和打印。</p>
+          <p>支持本地转换与 AI 创作两种方式：纯前端量化现有图片，或通过 Agnes Image 2.1 Flash 生成更适合拼豆的中间图。</p>
           <div className="hero-actions">
             <button className="primary-btn" type="button" onClick={() => uploadRef.current?.click()}>
               <ImageUp size={18} /> 上传图片
@@ -280,12 +320,58 @@ function App() {
 
       <section className="workspace">
         <aside className="panel controls-panel">
+          <div className="segmented mode-tabs">
+            <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => setSourceMode('local')} type="button">本地转换</button>
+            <button className={sourceMode === 'ai' ? 'active' : ''} onClick={() => setSourceMode('ai')} type="button">AI 生成</button>
+          </div>
+
           <input ref={uploadRef} type="file" accept="image/*" hidden onChange={(event) => void handleFile(event.target.files?.[0])} />
           <button className="upload-zone" type="button" onClick={() => uploadRef.current?.click()}>
             {sourcePreview ? <img src={sourcePreview} alt="上传预览" /> : <ImageUp size={34} />}
             <span>{sourcePreview ? sourceName : '选择一张图片'}</span>
-            <small>按原图比例完整预览，不裁切</small>
+            <small>{sourceMode === 'ai' ? '上传参考图，选择风格后 AI 生成' : '按原图比例完整预览，不裁切'}</small>
           </button>
+
+          {sourceMode === 'ai' && (
+            <div className="ai-panel">
+              <div className="ai-panel-head">
+                <span>AI 风格</span>
+                <small>基于 Agnes Image 2.1 Flash</small>
+              </div>
+              <div className="style-grid">
+                {AGNES_STYLE_PRESETS.map((style) => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    className={`style-card ${aiStyleId === style.id ? 'active' : ''}`}
+                    onClick={() => setAiStyleId(style.id)}
+                  >
+                    <strong>{style.label}</strong>
+                    <span>{style.description}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="ai-prompt-field">
+                <span>补充描述（选填）</span>
+                <textarea
+                  className="ai-prompt-input"
+                  rows={3}
+                  placeholder="例如：更偏暖色调、保留人物五官"
+                  value={aiPrompt}
+                  onChange={(event) => setAiPrompt(event.target.value)}
+                />
+              </label>
+              <button
+                className="primary-btn ai-generate-btn"
+                type="button"
+                onClick={() => void generateWithAi()}
+                disabled={!sourcePreview || isAiGenerating || isProcessing}
+              >
+                {isAiGenerating ? <LoaderCircle className="spin-icon" size={18} /> : <WandSparkles size={18} />}
+                {isAiGenerating ? 'AI 生成中…' : 'AI 生成拼豆图'}
+              </button>
+            </div>
+          )}
 
           <label>
             <span>图纸精度 <b>最长边 {gridSize} 格</b></span>
@@ -316,7 +402,7 @@ function App() {
           </div>
 
           <div className="action-grid">
-            <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing}><RotateCcw size={17} /> 重新生成</button>
+            <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing || isAiGenerating}><RotateCcw size={17} /> 重新生成</button>
             <button type="button" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
               {isExporting ? <LoaderCircle className="spin-icon" size={17} /> : <Download size={17} />}
               {isExporting ? '导出中...' : '导出 PNG'}
@@ -394,6 +480,18 @@ function App() {
           </div>
         </section>
       </section>
+
+      {isAiGenerating && (
+        <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+          <div className="export-loading-card">
+            <div className="export-spinner" aria-hidden="true">
+              <LoaderCircle size={30} />
+            </div>
+            <strong>AI 正在生成图片</strong>
+            <span>Agnes Image 2.1 Flash 创作中，完成后将自动量化成拼豆图纸…</span>
+          </div>
+        </div>
+      )}
 
       {isExporting && (
         <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">

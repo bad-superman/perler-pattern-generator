@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A fully client-side React app that turns an uploaded image into a printable perler-bead (拼豆) pattern. All image processing happens in the browser via the Canvas API — there is no backend. The UI copy is in Chinese.
+A fully client-side React app that turns an uploaded image into a printable perler-bead (拼豆) pattern. Image quantization runs in the browser via the Canvas API. An optional **AI generation** mode calls Agnes Image 2.1 Flash through a small Node proxy (`server/agnes-proxy.mjs`) to stylize the reference image before the same quantization pipeline runs.
 
 ## Commands
 
 - `npm run dev` — start the Vite dev server (default `http://127.0.0.1:5173`; the verify scripts assume this URL)
+- `npm run dev:proxy` — start the local Node Agnes proxy on port 8787 (local dev AI generation)
+- `npm run pages:dev` — build and run Cloudflare Pages + Functions locally via wrangler
 - `npm run build` — type-check with `tsc -b` then build with Vite
 - `npm run lint` — run ESLint over the repo
 - `npm run preview` — serve the production build
@@ -44,4 +46,11 @@ The entire app is `src/App.tsx` (~375 lines) plus CSS. There are no other module
 
 **Export**: `exportPng` uses `html-to-image`'s `toPng` on the pattern ref (at `pixelRatio: 4`) and saves via `file-saver`. Printing uses the native `window.print()`.
 
-**State coupling**: control changes (grid size, max colors, shape) call `regenerate`, which re-reads the original file from the hidden upload `<input>` ref and re-runs the full pipeline — the source file is never stored in state, only re-read from the DOM input.
+**State coupling**: control changes (grid size, max colors, shape) call `regenerate`, which re-reads the last processed file from `lastSourceFileRef` (or the hidden upload input) and re-runs the full pipeline.
+
+**AI generation** (`src/agnes/`):
+- `styles.ts` — six perler-oriented prompt presets (classic pixel, chibi, flat, 8-bit, craft, simplified real)
+- `client.ts` — `generateAgnesImage()` posts multipart form data to `/api/agnes/generate`
+- `server/agnes-proxy.mjs` — local dev proxy to Agnes API with `AGNES_API_KEY`
+- `functions/api/agnes/generate.js` — Cloudflare Pages Function for production `/api/agnes/generate`
+- UI mode toggle: **本地转换** (immediate `generatePattern`) vs **AI 生成** (Agnes img2img → `generatePattern`)
