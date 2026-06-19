@@ -47,7 +47,10 @@ export async function generateAgnesImage(options: GenerateAgnesImageOptions): Pr
 
   const payload = await response.json().catch(() => null) as (AgnesGenerateResponse & { error?: string }) | null
   if (!response.ok) {
-    throw new Error(payload?.error ?? `AI 生成失败（${response.status}）`)
+    if (!payload) {
+      throw new Error(`AI 服务未就绪（${response.status}），请检查 Cloudflare Functions 与环境变量`)
+    }
+    throw new Error(payload.error ?? `AI 生成失败（${response.status}）`)
   }
   if (!payload) throw new Error('AI 返回数据无效')
 
