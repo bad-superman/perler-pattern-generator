@@ -49,8 +49,9 @@ The app is `src/App.tsx` plus CSS and small modules under `src/agnes/` and `src/
 **State coupling**: control changes (grid size, max colors, shape) call `regenerate`, which re-reads the last processed file from `lastSourceFileRef` (or the hidden upload input) and re-runs the full pipeline.
 
 **AI generation** (`src/agnes/`):
-- `styles.ts` — six perler-oriented prompt presets (classic pixel, chibi, flat, 8-bit, craft, simplified real)
+- `styles.ts` — six perler-oriented prompt presets; prompts center the subject, simplify background, and target compact bead patterns
+- `cropSubject.ts` — trims AI output to non-background bounding box before quantization
 - `client.ts` — `generateAgnesImage()` posts multipart form data to `/api/agnes/generate`
 - `server/agnes-proxy.mjs` — local dev proxy to Agnes API with `AGNES_API_KEY`
 - `functions/api/agnes/generate.js` — Cloudflare Pages Function for production `/api/agnes/generate`
-- UI mode toggle: **本地转换** (immediate `generatePattern`) vs **AI 生成** (Agnes img2img → `generatePattern`)
+- UI mode toggle: **本地转换** (immediate `generatePattern`) vs **AI 生成** (Agnes img2img → crop → `generatePattern` with `sharpQuantize` and recommended 48-grid default)

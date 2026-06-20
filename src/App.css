@@ -206,6 +206,15 @@ h1 {
 .controls-panel label span {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.control-hint {
+  flex-basis: 100%;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .controls-panel input[type='range'] {

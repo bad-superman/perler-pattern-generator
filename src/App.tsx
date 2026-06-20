@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
+import { cropSubjectFromImage } from './agnes/cropSubject'
 import { AGNES_STYLE_PRESETS } from './agnes/styles'
 import { HAMA_PALETTE, HAMA_PALETTE_SIZE, type BeadPaletteEntry } from './palettes/hama'
 import './App.css'
@@ -25,6 +26,8 @@ type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
+const AI_DEFAULT_GRID_SIZE = 48
+const AI_GRID_RECOMMEND_MAX = 56
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -276,9 +279,10 @@ function App() {
     nextGridSize = gridSize,
     nextMaxColors = maxColors,
     nextShape = shape,
-    options?: { updatePreview?: boolean },
+    options?: { updatePreview?: boolean; sharpQuantize?: boolean },
   ) {
     const updatePreview = options?.updatePreview ?? true
+    const sharpQuantize = options?.sharpQuantize ?? false
     setError('')
     setIsProcessing(true)
     lastSourceFileRef.current = file
@@ -298,7 +302,7 @@ function App() {
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) throw new Error('浏览器不支持 Canvas')
 
-      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingEnabled = !sharpQuantize
       ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, cols, rows)
       const imageData = ctx.getImageData(0, 0, cols, rows)
 
@@ -381,7 +385,11 @@ function App() {
         extraPrompt: aiPrompt,
         size,
       })
-      await generatePattern(aiFile, gridSize, maxColors, shape, { updatePreview: false })
+      const croppedFile = await cropSubjectFromImage(aiFile)
+      await generatePattern(croppedFile, gridSize, maxColors, shape, {
+        updatePreview: false,
+        sharpQuantize: true,
+      })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
     } finally {
@@ -392,7 +400,10 @@ function App() {
   async function regenerate(nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
     const file = lastSourceFileRef.current ?? uploadRef.current?.files?.[0]
     if (file) {
-      await generatePattern(file, nextGridSize, nextMaxColors, nextShape, { updatePreview: sourceMode !== 'ai' })
+      await generatePattern(file, nextGridSize, nextMaxColors, nextShape, {
+        updatePreview: sourceMode !== 'ai',
+        sharpQuantize: sourceMode === 'ai',
+      })
     }
   }
 
@@ -415,6 +426,13 @@ function App() {
       const elapsed = Date.now() - startedAt
       if (elapsed < 600) await new Promise((resolve) => window.setTimeout(resolve, 600 - elapsed))
       setIsExporting(false)
+    }
+  }
+
+  function switchSourceMode(mode: SourceMode) {
+    setSourceMode(mode)
+    if (mode === 'ai') {
+      setGridSize((current) => (current > AI_GRID_RECOMMEND_MAX ? AI_DEFAULT_GRID_SIZE : current))
     }
   }
 
@@ -467,15 +485,15 @@ function App() {
       <section className="workspace">
         <aside className="panel controls-panel">
           <div className="segmented mode-tabs">
-            <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => setSourceMode('local')} type="button">本地转换</button>
-            <button className={sourceMode === 'ai' ? 'active' : ''} onClick={() => setSourceMode('ai')} type="button">AI 生成</button>
+            <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => switchSourceMode('local')} type="button">本地转换</button>
+            <button className={sourceMode === 'ai' ? 'active' : ''} onClick={() => switchSourceMode('ai')} type="button">AI 生成</button>
           </div>
 
           <input ref={uploadRef} type="file" accept="image/*" hidden onChange={(event) => void handleFile(event.target.files?.[0])} />
           <button className="upload-zone" type="button" onClick={() => uploadRef.current?.click()}>
             {sourcePreview ? <img src={sourcePreview} alt="上传预览" /> : <ImageUp size={34} />}
             <span>{sourcePreview ? sourceName : '选择一张图片'}</span>
-            <small>{sourceMode === 'ai' ? '上传参考图，选择风格后 AI 生成' : '按原图比例完整预览，不裁切'}</small>
+            <small>{sourceMode === 'ai' ? '上传参考图，AI 将聚焦主体并简化背景' : '按原图比例完整预览，不裁切'}</small>
           </button>
 
           {sourceMode === 'ai' && (
@@ -502,7 +520,7 @@ function App() {
                 <textarea
                   className="ai-prompt-input"
                   rows={3}
-                  placeholder="例如：更偏暖色调、保留人物五官"
+                  placeholder="例如：只要人物、不要背景文字"
                   value={aiPrompt}
                   onChange={(event) => setAiPrompt(event.target.value)}
                 />
@@ -520,7 +538,10 @@ function App() {
           )}
 
           <label>
-            <span>图纸精度 <b>最长边 {gridSize} 格</b></span>
+            <span>
+              图纸精度 <b>最长边 {gridSize} 格</b>
+              {sourceMode === 'ai' && <small className="control-hint"> AI 推荐 32–56 格，主体更清晰</small>}
+            </span>
             <input type="range" min="24" max="128" step="4" value={gridSize} onChange={(event) => {
               const value = Number(event.target.value)
               setGridSize(value)
