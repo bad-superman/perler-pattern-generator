@@ -1,6 +1,6 @@
 # 拼豆图纸生成器 (Perler Pattern Generator)
 
-一个 React 应用，可将上传的图片转换为可打印的拼豆图纸。图像量化在浏览器端通过 Canvas API 完成，输出 **Hama Midi 官方色号**（如 `01 白色`）；HEX 为社区近似值，购料请以袋装编号为准。 **AI 生成** 模式通过 Agnes API 代理（本地 Node 或 Cloudflare Pages Function）调用大模型。
+一个 React 应用，可将上传的图片转换为可打印的拼豆图纸。图像量化在浏览器端通过 Canvas API 完成，默认输出 **MARD 221 国产色号**（如 `A01`、`B12`），侧栏可切换 **Hama** 色卡；HEX 为社区近似值，购料请以实物编号为准。 **AI 生成** 模式通过 Agnes API 代理（本地 Node 或 Cloudflare Pages Function）调用大模型。
 
 ## 本地开发
 

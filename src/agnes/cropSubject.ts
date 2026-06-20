@@ -35,17 +35,14 @@ function canvasToFile(canvas: HTMLCanvasElement, fileName: string, mimeType = 'i
   })
 }
 
-export async function cropSubjectFromImage(file: File): Promise<File> {
-  const image = await loadImage(file)
-  const canvas = document.createElement('canvas')
-  canvas.width = image.width
-  canvas.height = image.height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return file
+interface ContentBounds {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
 
-  ctx.drawImage(image, 0, 0)
-  const { width, height, data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
-
+function findContentBounds(width: number, height: number, data: Uint8ClampedArray): ContentBounds | null {
   let minX = width
   let minY = height
   let maxX = 0
@@ -64,16 +61,24 @@ export async function cropSubjectFromImage(file: File): Promise<File> {
     }
   }
 
-  if (!found) return file
+  if (!found) return null
+  return { minX, minY, maxX, maxY }
+}
 
-  const contentW = maxX - minX + 1
-  const contentH = maxY - minY + 1
-  if (contentW * contentH > width * height * 0.95) return file
+function cropCanvasToBounds(
+  source: HTMLCanvasElement,
+  bounds: ContentBounds,
+  paddingRatio = 0.005,
+): HTMLCanvasElement | null {
+  const { width, height } = source
+  const contentW = bounds.maxX - bounds.minX + 1
+  const contentH = bounds.maxY - bounds.minY + 1
+  if (contentW * contentH > width * height * 0.95) return null
 
-  const padX = Math.max(2, Math.round(contentW * 0.02))
-  const padY = Math.max(2, Math.round(contentH * 0.02))
-  const cropX = Math.max(0, minX - padX)
-  const cropY = Math.max(0, minY - padY)
+  const padX = Math.max(1, Math.round(contentW * paddingRatio))
+  const padY = Math.max(1, Math.round(contentH * paddingRatio))
+  const cropX = Math.max(0, bounds.minX - padX)
+  const cropY = Math.max(0, bounds.minY - padY)
   const cropW = Math.min(width - cropX, contentW + padX * 2)
   const cropH = Math.min(height - cropY, contentH + padY * 2)
 
@@ -81,8 +86,47 @@ export async function cropSubjectFromImage(file: File): Promise<File> {
   cropped.width = cropW
   cropped.height = cropH
   const croppedCtx = cropped.getContext('2d')
-  if (!croppedCtx) return file
+  if (!croppedCtx) return null
 
-  croppedCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+  croppedCtx.drawImage(source, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+  return cropped
+}
+
+export async function cropSubjectFromImage(file: File): Promise<File> {
+  const image = await loadImage(file)
+  const canvas = document.createElement('canvas')
+  canvas.width = image.width
+  canvas.height = image.height
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return file
+
+  ctx.drawImage(image, 0, 0)
+  const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const initialBounds = findContentBounds(canvas.width, canvas.height, initialData.data)
+  if (!initialBounds) return file
+
+  let cropped = cropCanvasToBounds(canvas, initialBounds)
+  if (!cropped) return file
+
+  const contentW = initialBounds.maxX - initialBounds.minX + 1
+  const contentH = initialBounds.maxY - initialBounds.minY + 1
+  const initialFillRatio = (contentW * contentH) / (canvas.width * canvas.height)
+  if (initialFillRatio < 0.6) {
+    const croppedCtx = cropped.getContext('2d', { willReadFrequently: true })
+    if (croppedCtx) {
+      const innerData = croppedCtx.getImageData(0, 0, cropped.width, cropped.height)
+      const innerBounds = findContentBounds(cropped.width, cropped.height, innerData.data)
+      if (innerBounds) {
+        const innerW = innerBounds.maxX - innerBounds.minX + 1
+        const innerH = innerBounds.maxY - innerBounds.minY + 1
+        const innerFillRatio = (innerW * innerH) / (cropped.width * cropped.height)
+        if (innerFillRatio < 0.6) {
+          const tighter = cropCanvasToBounds(cropped, innerBounds)
+          if (tighter) cropped = tighter
+        }
+      }
+    }
+  }
+
   return canvasToFile(cropped, file.name, file.type || 'image/png')
 }

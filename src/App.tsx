@@ -4,7 +4,14 @@ import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { AGNES_STYLE_PRESETS } from './agnes/styles'
-import { HAMA_PALETTE, HAMA_PALETTE_SIZE, type BeadPaletteEntry } from './palettes/hama'
+import {
+  DEFAULT_PALETTE_BRAND,
+  getPalette,
+  getPaletteColors,
+  getPaletteSize,
+  type BeadPaletteEntry,
+  type PaletteBrand,
+} from './palettes'
 import './App.css'
 
 interface PaletteColor {
@@ -75,6 +82,10 @@ function fitGridToImage(image: HTMLImageElement, longSide: number, shape: BoardS
 
 function isDarkHex(hex: string) {
   return Number.parseInt(hex.slice(1), 16) < 0x777777
+}
+
+function formatLegendLabel(color: Pick<PaletteColor, 'code' | 'name'>) {
+  return color.name ? `${color.code} ${color.name}` : color.code
 }
 
 function sanitizeExportFilename(name: string) {
@@ -193,7 +204,7 @@ function buildPatternExportCanvas(
     ctx.font = '400 13px "Noto Sans SC", sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(`${color.code} ${color.name}`, x + 28, y + 14)
+    ctx.fillText(formatLegendLabel(color), x + 28, y + 14)
     ctx.textAlign = 'right'
     ctx.fillStyle = '#6f647d'
     ctx.fillText(String(color.count), x + legendItemW - 12, y + 14)
@@ -224,6 +235,7 @@ function App() {
   const [renderMode, setRenderMode] = useState<RenderMode>('symbols')
   const [pattern, setPattern] = useState<BeadCell[][]>([])
   const [palette, setPalette] = useState<PaletteColor[]>([])
+  const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
   const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
   const [aiPrompt, setAiPrompt] = useState('')
@@ -242,6 +254,9 @@ function App() {
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
   const cellSize = renderMode === 'symbols' ? 20 : 14
   const modeLabel = renderMode === 'symbols' ? '符号图纸' : '纯色预览'
+  const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
+  const activePaletteColors = useMemo(() => getPaletteColors(paletteBrand), [paletteBrand])
+  const activePaletteSize = useMemo(() => getPaletteSize(paletteBrand), [paletteBrand])
 
   useEffect(() => {
     if (!pattern.length) return undefined
@@ -279,10 +294,12 @@ function App() {
     nextGridSize = gridSize,
     nextMaxColors = maxColors,
     nextShape = shape,
+    nextPaletteBrand = paletteBrand,
     options?: { updatePreview?: boolean; sharpQuantize?: boolean },
   ) {
     const updatePreview = options?.updatePreview ?? true
     const sharpQuantize = options?.sharpQuantize ?? false
+    const beadPalette = getPaletteColors(nextPaletteBrand)
     setError('')
     setIsProcessing(true)
     lastSourceFileRef.current = file
@@ -311,7 +328,7 @@ function App() {
         for (let x = 0; x < cols; x += 1) {
           const offset = (y * cols + x) * 4
           if (imageData.data[offset + 3] < 80) continue
-          sampled.push(nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], HAMA_PALETTE))
+          sampled.push(nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], beadPalette))
         }
       }
 
@@ -324,14 +341,14 @@ function App() {
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
       const selectedPalette = selected.map((paletteIndex, index) => ({
-        code: HAMA_PALETTE[paletteIndex][0],
-        name: HAMA_PALETTE[paletteIndex][1],
-        hex: HAMA_PALETTE[paletteIndex][2],
+        code: beadPalette[paletteIndex][0],
+        name: beadPalette[paletteIndex][1],
+        hex: beadPalette[paletteIndex][2],
         count: 0,
         symbol: SYMBOLS[index] ?? String(index + 1),
       }))
 
-      const selectedColors = selected.map((index) => HAMA_PALETTE[index])
+      const selectedColors = selected.map((index) => beadPalette[index])
       const grid: BeadCell[][] = []
       for (let y = 0; y < rows; y += 1) {
         const row: BeadCell[] = []
@@ -386,7 +403,7 @@ function App() {
         size,
       })
       const croppedFile = await cropSubjectFromImage(aiFile)
-      await generatePattern(croppedFile, gridSize, maxColors, shape, {
+      await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
       })
@@ -397,14 +414,27 @@ function App() {
     }
   }
 
-  async function regenerate(nextGridSize = gridSize, nextMaxColors = maxColors, nextShape = shape) {
+  async function regenerate(
+    nextGridSize = gridSize,
+    nextMaxColors = maxColors,
+    nextShape = shape,
+    nextPaletteBrand = paletteBrand,
+  ) {
     const file = lastSourceFileRef.current ?? uploadRef.current?.files?.[0]
     if (file) {
-      await generatePattern(file, nextGridSize, nextMaxColors, nextShape, {
+      await generatePattern(file, nextGridSize, nextMaxColors, nextShape, nextPaletteBrand, {
         updatePreview: sourceMode !== 'ai',
         sharpQuantize: sourceMode === 'ai',
       })
     }
+  }
+
+  function switchPaletteBrand(brand: PaletteBrand) {
+    if (brand === paletteBrand) return
+    const nextMaxColors = Math.min(maxColors, getPaletteSize(brand))
+    setPaletteBrand(brand)
+    setMaxColors(nextMaxColors)
+    void regenerate(gridSize, nextMaxColors, shape, brand)
   }
 
   async function exportPng() {
@@ -476,7 +506,7 @@ function App() {
         </div>
         <div className="sample-card" aria-label="拼豆说明">
           <div className="mini-board">
-            {Array.from({ length: 100 }).map((_, index) => <span key={index} style={{ background: HAMA_PALETTE[(index * 7) % HAMA_PALETTE.length][2] }} />)}
+            {Array.from({ length: 100 }).map((_, index) => <span key={index} style={{ background: activePaletteColors[(index * 7) % activePaletteColors.length][2] }} />)}
           </div>
           <p><strong>拼豆是什么？</strong>把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。</p>
         </div>
@@ -520,7 +550,7 @@ function App() {
                 <textarea
                   className="ai-prompt-input"
                   rows={3}
-                  placeholder="例如：只要人物、不要背景文字"
+                  placeholder="例如：放大主体、减少留白；只要人物、不要背景文字"
                   value={aiPrompt}
                   onChange={(event) => setAiPrompt(event.target.value)}
                 />
@@ -550,8 +580,16 @@ function App() {
           </label>
 
           <label>
+            <span>色卡 <b>{activePalette.label}</b></span>
+            <div className="segmented">
+              <button className={paletteBrand === 'mard' ? 'active' : ''} onClick={() => switchPaletteBrand('mard')} type="button">MARD（国产）</button>
+              <button className={paletteBrand === 'hama' ? 'active' : ''} onClick={() => switchPaletteBrand('hama')} type="button">Hama</button>
+            </div>
+          </label>
+
+          <label>
             <span>最大颜色数 <b>{maxColors}</b></span>
-            <input type="range" min="4" max={HAMA_PALETTE_SIZE} step="1" value={maxColors} onChange={(event) => {
+            <input type="range" min="4" max={activePaletteSize} step="1" value={maxColors} onChange={(event) => {
               const value = Number(event.target.value)
               setMaxColors(value)
               void regenerate(gridSize, value, shape)
@@ -599,7 +637,7 @@ function App() {
               <div>
                 <small>颜色</small>
                 <strong>{palette.length}</strong>
-                <span>已匹配 Hama 色号</span>
+                <span>已匹配 {activePalette.label} 色号</span>
               </div>
               <div>
                 <small>模式</small>
@@ -631,7 +669,7 @@ function App() {
                   {palette.map((color) => (
                     <div className="legend-item" key={color.symbol}>
                       <i style={{ background: color.hex }}>{color.symbol}</i>
-                      <span>{color.code} {color.name}</span>
+                      <span>{formatLegendLabel(color)}</span>
                       <b>{color.count}</b>
                     </div>
                   ))}

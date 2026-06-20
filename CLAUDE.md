@@ -34,11 +34,11 @@ The app is `src/App.tsx` plus CSS and small modules under `src/agnes/` and `src/
 1. `loadImage` decodes the `File` into an `HTMLImageElement`.
 2. `fitGridToImage` computes grid dimensions (`cols`/`rows`) from the "最长边" (long-side) `gridSize` and `shape` — either preserving the original aspect ratio (`'ratio'`) or forcing a square.
 3. The image is drawn onto an off-screen canvas at grid resolution; each pixel becomes one bead cell.
-4. `nearestPaletteColor` maps each pixel to the closest color in `HAMA_PALETTE` ([`src/palettes/hama.ts`](src/palettes/hama.ts), ~60 Hama Midi codes with community HEX values) by squared RGB distance.
+4. `nearestPaletteColor` maps each pixel to the closest color in the active bead palette (`paletteBrand`: default **MARD 221** via [`src/palettes/mard221.ts`](src/palettes/mard221.ts), or **Hama** via [`src/palettes/hama.ts`](src/palettes/hama.ts)) by squared RGB distance. Palette registry lives in [`src/palettes/index.ts`](src/palettes/index.ts).
 5. Colors are ranked by frequency and truncated to `maxColors`; pixels are then re-quantized against only the selected palette so counts and the rendered grid stay consistent.
-6. Each selected color gets a symbol from the `SYMBOLS` string; results populate `pattern` (`BeadCell[][]`) and `palette` (`PaletteColor[]` with Hama `code`, Chinese `name`, and per-color counts).
+6. Each selected color gets a symbol from the `SYMBOLS` string; results populate `pattern` (`BeadCell[][]`) and `palette` (`PaletteColor[]` with bead `code`, optional Chinese `name`, and per-color counts).
 
-**Key constants**: `HAMA_PALETTE` (Hama bead color set; HEX is approximate for screen matching) and `SYMBOLS` (single-glyph labels assigned to colors in frequency order). Adding/reordering palette colors changes which beads images map to.
+**Key constants**: `getPaletteColors()` / `paletteBrand` state (MARD default, Hama optional; sidebar segmented control triggers `regenerate` on switch) and `SYMBOLS` (single-glyph labels assigned to colors in frequency order). Adding/reordering palette colors changes which beads images map to.
 
 **Rendering**: the pattern renders as a CSS grid of `<span>` cells. `renderMode` toggles between `'symbols'` (letter/glyph per cell, larger `cellSize`) and `'solid'` (color-only). Cell text color flips to white for dark backgrounds based on a hex-value threshold.
 
@@ -46,7 +46,7 @@ The app is `src/App.tsx` plus CSS and small modules under `src/agnes/` and `src/
 
 **Export**: `exportPng` draws the pattern and legend directly on Canvas from in-memory `pattern`/`palette` state, then saves via `file-saver` (`toBlob`). Printing uses the native `window.print()`.
 
-**State coupling**: control changes (grid size, max colors, shape) call `regenerate`, which re-reads the last processed file from `lastSourceFileRef` (or the hidden upload input) and re-runs the full pipeline.
+**State coupling**: control changes (grid size, max colors, shape, palette brand) call `regenerate`, which re-reads the last processed file from `lastSourceFileRef` (or the hidden upload input) and re-runs the full pipeline.
 
 **AI generation** (`src/agnes/`):
 - `styles.ts` — six perler-oriented prompt presets; prompts center the subject, simplify background, and target compact bead patterns
