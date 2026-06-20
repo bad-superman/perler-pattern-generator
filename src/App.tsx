@@ -80,6 +80,25 @@ function fitGridToImage(image: HTMLImageElement, longSide: number, shape: BoardS
   return { cols: Math.max(1, Math.round((longSide * image.width) / image.height)), rows: longSide }
 }
 
+interface ImageDrawRect {
+  sx: number
+  sy: number
+  sw: number
+  sh: number
+  dx: number
+  dy: number
+  dw: number
+  dh: number
+}
+
+function computeImageDrawRect(image: HTMLImageElement, cols: number, rows: number, shape: BoardShape): ImageDrawRect {
+  if (shape === 'square') {
+    const size = Math.min(image.width, image.height)
+    return { sx: 0, sy: 0, sw: size, sh: size, dx: 0, dy: 0, dw: cols, dh: rows }
+  }
+  return { sx: 0, sy: 0, sw: image.width, sh: image.height, dx: 0, dy: 0, dw: cols, dh: rows }
+}
+
 function isDarkHex(hex: string) {
   return Number.parseInt(hex.slice(1), 16) < 0x777777
 }
@@ -320,7 +339,8 @@ function App() {
       if (!ctx) throw new Error('浏览器不支持 Canvas')
 
       ctx.imageSmoothingEnabled = !sharpQuantize
-      ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, cols, rows)
+      const drawRect = computeImageDrawRect(image, cols, rows, nextShape)
+      ctx.drawImage(image, drawRect.sx, drawRect.sy, drawRect.sw, drawRect.sh, drawRect.dx, drawRect.dy, drawRect.dw, drawRect.dh)
       const imageData = ctx.getImageData(0, 0, cols, rows)
 
       const sampled: number[] = []
@@ -598,7 +618,7 @@ function App() {
 
           <div className="segmented">
             <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
-            <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形图纸</button>
+            <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
           </div>
 
           <div className="segmented">
@@ -715,6 +735,12 @@ function App() {
           {exportNotice}
         </div>
       )}
+
+      <footer className="site-footer">
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+          京ICP备2024067456号-3
+        </a>
+      </footer>
     </main>
   )
 }

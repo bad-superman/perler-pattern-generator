@@ -51,7 +51,8 @@ button:disabled {
   body { background: white; }
   .hero-section,
   .controls-panel,
-  .section-title { display: none !important; }
+  .section-title,
+  .site-footer { display: none !important; }
   .app-shell { padding: 0 !important; }
   .workspace { display: block !important; }
   .preview-panel { box-shadow: none !important; border: 0 !important; }
