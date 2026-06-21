@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
@@ -35,6 +35,10 @@ type SourceMode = 'local' | 'ai'
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 const AI_DEFAULT_GRID_SIZE = 48
 const AI_GRID_RECOMMEND_MAX = 56
+const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
+const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
+const HERO_CAROUSEL_INTERVAL_MS = 5000
+const HERO_CAROUSEL_SLIDE_COUNT = 2
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -97,6 +101,81 @@ function computeImageDrawRect(image: HTMLImageElement, cols: number, rows: numbe
     return { sx: 0, sy: 0, sw: size, sh: size, dx: 0, dy: 0, dw: cols, dh: rows }
   }
   return { sx: 0, sy: 0, sw: image.width, sh: image.height, dx: 0, dy: 0, dw: cols, dh: rows }
+}
+
+function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEntry[] }) {
+  const [activeSlide, setActiveSlide] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  useEffect(() => {
+    if (paused) return undefined
+    const timer = window.setInterval(() => {
+      setActiveSlide((current) => (current + 1) % HERO_CAROUSEL_SLIDE_COUNT)
+    }, HERO_CAROUSEL_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [paused])
+
+  function goToSlide(index: number) {
+    setActiveSlide((index + HERO_CAROUSEL_SLIDE_COUNT) % HERO_CAROUSEL_SLIDE_COUNT)
+  }
+
+  return (
+    <div
+      className="hero-carousel"
+      aria-roledescription="carousel"
+      aria-label="拼豆介绍与推广"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="carousel-viewport">
+        <div
+          className="carousel-track"
+          style={{ transform: `translateX(-${activeSlide * 100}%)` }}
+        >
+          <div className="carousel-slide carousel-slide-intro" aria-hidden={activeSlide !== 0}>
+            <div className="mini-board">
+              {Array.from({ length: 100 }).map((_, index) => (
+                <span key={index} style={{ background: paletteColors[(index * 7) % paletteColors.length][2] }} />
+              ))}
+            </div>
+            <p><strong>拼豆是什么？</strong>把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。</p>
+          </div>
+          <a
+            className="carousel-slide carousel-slide-ad"
+            href={PROMO_AD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-hidden={activeSlide !== 1}
+            aria-label="查看融豆拼拼 2.6mm 融合豆全色套装推广"
+          >
+            <img src={PROMO_AD_IMAGE} alt="融豆拼拼 2.6mm 融合豆全色套装" />
+            <span className="ad-badge">推广</span>
+          </a>
+        </div>
+      </div>
+      <div className="carousel-controls">
+        <button type="button" className="carousel-nav-btn" onClick={() => goToSlide(activeSlide - 1)} aria-label="上一张">
+          <ChevronLeft size={18} />
+        </button>
+        <div className="carousel-dots" role="tablist" aria-label="幻灯片切换">
+          {Array.from({ length: HERO_CAROUSEL_SLIDE_COUNT }).map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              role="tab"
+              className={activeSlide === index ? 'active' : ''}
+              aria-selected={activeSlide === index}
+              aria-label={`第 ${index + 1} 张`}
+              onClick={() => goToSlide(index)}
+            />
+          ))}
+        </div>
+        <button type="button" className="carousel-nav-btn" onClick={() => goToSlide(activeSlide + 1)} aria-label="下一张">
+          <ChevronRight size={18} />
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function isDarkHex(hex: string) {
@@ -524,11 +603,11 @@ function App() {
             </button>
           </div>
         </div>
-        <div className="sample-card" aria-label="拼豆说明">
-          <div className="mini-board">
-            {Array.from({ length: 100 }).map((_, index) => <span key={index} style={{ background: activePaletteColors[(index * 7) % activePaletteColors.length][2] }} />)}
-          </div>
-          <p><strong>拼豆是什么？</strong>把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。</p>
+        <div className="hero-side-panel" aria-label="拼豆介绍与推广">
+          <HeroCarousel paletteColors={activePaletteColors} />
+          <a className="ad-bar" href={PROMO_AD_URL} target="_blank" rel="noopener noreferrer">
+            推荐：融豆拼拼 2.6mm 融合豆全色套装 →
+          </a>
         </div>
       </section>
 
