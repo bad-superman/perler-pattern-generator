@@ -33,12 +33,15 @@ type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
+const DEFAULT_GRID_SIZE = 48
+const EMPTY_CELL_HEX = '#fffaf1'
 const AI_DEFAULT_GRID_SIZE = 48
 const AI_GRID_RECOMMEND_MAX = 56
 const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
 const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
+const QUICK_GRID_SIZES = [32, 48, 64, 96] as const
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -101,6 +104,95 @@ function computeImageDrawRect(image: HTMLImageElement, cols: number, rows: numbe
     return { sx: 0, sy: 0, sw: size, sh: size, dx: 0, dy: 0, dw: cols, dh: rows }
   }
   return { sx: 0, sy: 0, sw: image.width, sh: image.height, dx: 0, dy: 0, dw: cols, dh: rows }
+}
+
+function getGridSizeHint(size: number) {
+  if (size <= 32) return '适合简单图标/头像，建议 8–12 色'
+  if (size <= 56) return '推荐范围，清晰度和豆数较平衡'
+  return '更清晰但豆数多，导出图纸也更大'
+}
+
+function getExportCellSize(gridCols: number, gridRows: number) {
+  const longSide = Math.max(gridCols, gridRows)
+  if (longSide >= 96) return 8
+  if (longSide > 64) return 12
+  return 16
+}
+
+function getSamplingScale(cols: number, rows: number) {
+  return Math.max(cols, rows) <= 48 ? 4 : 1
+}
+
+function drawImageToSampledGrid(
+  image: HTMLImageElement,
+  cols: number,
+  rows: number,
+  shape: BoardShape,
+  sharpQuantize: boolean,
+) {
+  const sampleScale = getSamplingScale(cols, rows)
+  const canvas = document.createElement('canvas')
+  canvas.width = cols * sampleScale
+  canvas.height = rows * sampleScale
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error('浏览器不支持 Canvas')
+
+  ctx.imageSmoothingEnabled = sampleScale > 1 || !sharpQuantize
+  const drawRect = computeImageDrawRect(image, cols, rows, shape)
+  ctx.drawImage(
+    image,
+    drawRect.sx,
+    drawRect.sy,
+    drawRect.sw,
+    drawRect.sh,
+    drawRect.dx * sampleScale,
+    drawRect.dy * sampleScale,
+    drawRect.dw * sampleScale,
+    drawRect.dh * sampleScale,
+  )
+
+  if (sampleScale === 1) return ctx.getImageData(0, 0, cols, rows)
+
+  const source = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+  const averaged = new ImageData(cols, rows)
+  const totalSamples = sampleScale * sampleScale
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      let r = 0
+      let g = 0
+      let b = 0
+      let a = 0
+      let visibleCount = 0
+
+      for (let sampleY = 0; sampleY < sampleScale; sampleY += 1) {
+        for (let sampleX = 0; sampleX < sampleScale; sampleX += 1) {
+          const sourceX = x * sampleScale + sampleX
+          const sourceY = y * sampleScale + sampleY
+          const sourceOffset = (sourceY * canvas.width + sourceX) * 4
+          const alpha = source[sourceOffset + 3]
+          if (alpha < 80) continue
+          r += source[sourceOffset]
+          g += source[sourceOffset + 1]
+          b += source[sourceOffset + 2]
+          a += alpha
+          visibleCount += 1
+        }
+      }
+
+      const targetOffset = (y * cols + x) * 4
+      if (visibleCount === 0) {
+        averaged.data[targetOffset + 3] = 0
+      } else {
+        averaged.data[targetOffset] = Math.round(r / visibleCount)
+        averaged.data[targetOffset + 1] = Math.round(g / visibleCount)
+        averaged.data[targetOffset + 2] = Math.round(b / visibleCount)
+        averaged.data[targetOffset + 3] = Math.round(a / totalSamples)
+      }
+    }
+  }
+
+  return averaged
 }
 
 function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEntry[] }) {
@@ -217,7 +309,7 @@ function buildPatternExportCanvas(
   renderMode: RenderMode,
   activeCells: number,
 ) {
-  const exportCell = 16
+  const exportCell = getExportCellSize(gridCols, gridRows)
   const gap = 1
   const gridPad = 12
   const gridInnerW = gridCols * exportCell + Math.max(0, gridCols - 1) * gap
@@ -266,7 +358,7 @@ function buildPatternExportCanvas(
       const py = gridY + gridPad + y * (exportCell + gap)
       ctx.fillStyle = cell.hex
       ctx.fillRect(px, py, exportCell, exportCell)
-      if (renderMode === 'symbols') {
+      if (renderMode === 'symbols' && cell.colorIndex >= 0) {
         ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
         ctx.font = `700 ${Math.max(8, Math.floor(exportCell * 0.55))}px "Noto Sans SC", sans-serif`
         ctx.textAlign = 'center'
@@ -325,9 +417,9 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 function App() {
   const [sourceName, setSourceName] = useState('')
   const [sourcePreview, setSourcePreview] = useState('')
-  const [gridSize, setGridSize] = useState(64)
-  const [gridCols, setGridCols] = useState(64)
-  const [gridRows, setGridRows] = useState(64)
+  const [gridSize, setGridSize] = useState(DEFAULT_GRID_SIZE)
+  const [gridCols, setGridCols] = useState(DEFAULT_GRID_SIZE)
+  const [gridRows, setGridRows] = useState(DEFAULT_GRID_SIZE)
   const [maxColors, setMaxColors] = useState(24)
   const [shape, setShape] = useState<BoardShape>('ratio')
   const [renderMode, setRenderMode] = useState<RenderMode>('symbols')
@@ -355,6 +447,7 @@ function App() {
   const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
   const activePaletteColors = useMemo(() => getPaletteColors(paletteBrand), [paletteBrand])
   const activePaletteSize = useMemo(() => getPaletteSize(paletteBrand), [paletteBrand])
+  const gridSizeHint = useMemo(() => getGridSizeHint(gridSize), [gridSize])
 
   useEffect(() => {
     if (!pattern.length) return undefined
@@ -411,16 +504,7 @@ function App() {
         setSourcePreview(URL.createObjectURL(file))
       }
 
-      const canvas = document.createElement('canvas')
-      canvas.width = cols
-      canvas.height = rows
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })
-      if (!ctx) throw new Error('浏览器不支持 Canvas')
-
-      ctx.imageSmoothingEnabled = !sharpQuantize
-      const drawRect = computeImageDrawRect(image, cols, rows, nextShape)
-      ctx.drawImage(image, drawRect.sx, drawRect.sy, drawRect.sw, drawRect.sh, drawRect.dx, drawRect.dy, drawRect.dw, drawRect.dh)
-      const imageData = ctx.getImageData(0, 0, cols, rows)
+      const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize)
 
       const sampled: number[] = []
       for (let y = 0; y < rows; y += 1) {
@@ -453,6 +537,14 @@ function App() {
         const row: BeadCell[] = []
         for (let x = 0; x < cols; x += 1) {
           const offset = (y * cols + x) * 4
+          if (imageData.data[offset + 3] < 80) {
+            row.push({
+              colorIndex: -1,
+              hex: EMPTY_CELL_HEX,
+              symbol: '',
+            })
+            continue
+          }
           const originalNearest = nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], selectedColors)
           selectedPalette[originalNearest].count += 1
           row.push({
@@ -499,6 +591,7 @@ function App() {
         file: refFile,
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
+        gridSize,
         size,
       })
       const croppedFile = await cropSubjectFromImage(aiFile)
@@ -578,9 +671,9 @@ function App() {
         {pattern.flat().map((cell, index) => (
           <span
             key={`${index}-${cell.symbol}`}
-            style={{ background: cell.hex, color: isDarkHex(cell.hex) ? '#fff' : '#1d1a23' }}
+            style={{ background: cell.hex, color: cell.colorIndex >= 0 && isDarkHex(cell.hex) ? '#fff' : '#1d1a23' }}
           >
-            {renderMode === 'symbols' ? cell.symbol : ''}
+            {renderMode === 'symbols' && cell.colorIndex >= 0 ? cell.symbol : ''}
           </span>
         ))}
       </div>
@@ -668,14 +761,29 @@ function App() {
 
           <label>
             <span>
-              图纸精度 <b>最长边 {gridSize} 格</b>
-              {sourceMode === 'ai' && <small className="control-hint"> AI 推荐 32–56 格，主体更清晰</small>}
+              图纸尺寸 <b>最长边 {gridSize} 格</b>
+              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐 32–56 格' : ''}</small>
             </span>
             <input type="range" min="24" max="128" step="4" value={gridSize} onChange={(event) => {
               const value = Number(event.target.value)
               setGridSize(value)
               void regenerate(value, maxColors, shape)
             }} />
+            <div className="quick-size-grid" aria-label="常用图纸尺寸">
+              {QUICK_GRID_SIZES.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  className={gridSize === size ? 'active' : ''}
+                  onClick={() => {
+                    setGridSize(size)
+                    void regenerate(size, maxColors, shape)
+                  }}
+                >
+                  {size} 格
+                </button>
+              ))}
+            </div>
           </label>
 
           <label>
@@ -726,7 +834,7 @@ function App() {
               <div>
                 <small>尺寸</small>
                 <strong>{gridCols} × {gridRows}</strong>
-                <span>按当前图纸精度生成</span>
+                <span>按当前图纸尺寸生成</span>
               </div>
               <div>
                 <small>豆数</small>

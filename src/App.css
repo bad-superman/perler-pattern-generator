@@ -335,6 +335,28 @@ h1 {
   accent-color: var(--accent);
 }
 
+.quick-size-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.quick-size-grid button {
+  min-height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quick-size-grid button.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
