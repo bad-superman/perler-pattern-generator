@@ -18,9 +18,9 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
   {
     id: 'cute-chibi',
     label: '可爱 Q 版',
-    description: '2 头身 Q 版，保持原图构图',
+    description: '像素 Q 版，大头小身体',
     promptSuffix:
-      '日本动画超级变形 Q 版（SD/chibi）风格，只对参考图中已出现的头部、上半身和可见手臂做 Q 版变形（头部偏大、身体偏小、可见手臂短粗圆润），大眼睛、极小点状鼻子、小巧嘴型。严格保留参考图的构图、取景范围、姿态和可见部位，只风格化已有像素区域，不向外扩展画面，不补画参考图中未出现的身体部位。保留发型发色、服装主色和标志性配饰，极度简化细节。明亮柔和配色，赛璐璐平涂大色块。不要写实人体比例，不要照片质感，不要普通 7-8 头身动漫人体，不要细手指，不要擅自补全下半身。',
+      'Turn the image on the right into chibi pixel art like the character on the left. Huge head. Tiny body. Low-res grid. Cute exaggeration. Game-ready look. --ar 1:1 --style raw --c 20',
   },
   {
     id: 'flat-minimal',
@@ -53,15 +53,8 @@ function buildGridSizePrompt(gridSize?: number) {
   return '目标图纸很小，请进一步简化为图标级构图，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更少颜色和更大的色块。'
 }
 
-function buildChibiGuardPrompt(styleId: string) {
-  if (styleId !== 'cute-chibi') return ''
-  return '重要：必须把可见人物变形为超级 Q 版，但不能改变参考图构图。参考图是头像就只输出头像，是半身就只输出半身，是全身才输出全身。禁止补画、延伸或展开参考图中未出现的身体部位，禁止把紧凑构图拉大成更大画布。若参考图底边在腰部或胸部位置，输出底边必须停在同一高度，不要向下画腿或鞋。若参考图是真人或写实插画，需卡通化变形，而不是仅美化原图。'
-}
-
 function buildFramingPrompt(styleId: string) {
-  if (styleId === 'cute-chibi') {
-    return '构图要求：与参考图保持相同的取景、裁切和主体位置，近景紧凑，主体占画面 75-90%。不要改变构图类型，不要把半身变成全身，不要把头像补成半身。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
-  }
+  if (styleId === 'cute-chibi') return ''
   return '构图要求：近景、紧凑裁切，主体居中，主体占画面 75-90%。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
 }
 
@@ -74,15 +67,15 @@ export function buildAgnesPrompt(
   const style = AGNES_STYLE_PRESETS.find((item) => item.id === styleId)
   if (!style) throw new Error('请选择一种 AI 风格')
 
-  const parts = [AGNES_BASE_PROMPT]
+  const parts: string[] = []
+  if (styleId !== 'cute-chibi') parts.push(AGNES_BASE_PROMPT)
   if (compositionHint.trim()) parts.push(compositionHint.trim())
   parts.push(style.promptSuffix)
-  const chibiGuardPrompt = buildChibiGuardPrompt(styleId)
-  if (chibiGuardPrompt) parts.push(chibiGuardPrompt)
   const gridSizePrompt = buildGridSizePrompt(gridSize)
   if (gridSizePrompt) parts.push(gridSizePrompt)
   const trimmedExtra = extraPrompt.trim()
   if (trimmedExtra) parts.push(trimmedExtra)
-  parts.push(buildFramingPrompt(styleId))
+  const framingPrompt = buildFramingPrompt(styleId)
+  if (framingPrompt) parts.push(framingPrompt)
   return parts.join(' ')
 }
