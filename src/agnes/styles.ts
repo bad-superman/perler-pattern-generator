@@ -18,8 +18,9 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
   {
     id: 'cute-chibi',
     label: '可爱 Q 版',
-    description: '圆润造型，明亮 pastel 配色',
-    promptSuffix: '可爱 Q 版风格，造型圆润，明亮柔和配色，卡哇伊视觉，使用近景头像或半身构图，让角色填充大部分画面',
+    description: '2 头身超变形，贴纸感 Q 版',
+    promptSuffix:
+      '日本动画超级变形 Q 版（SD/chibi）风格，严格 2 头身比例（头部高度约等于全身高度），超大圆润脑袋，极小身体和短粗圆润四肢，手套状小手、圆润小脚，占脸部很大比例的大眼睛、极小点状鼻子、小巧嘴型，五官位置偏靠下。保留参考图的发型发色、服装主色和标志性配饰，但极度简化身体与服装细节。明亮柔和配色，赛璐璐平涂大色块，贴纸感可爱造型。不要写实人体比例，不要照片质感，不要普通 7-8 头身动漫人体，不要细手指和长四肢，不要细致肌肉阴影和复杂褶皱。',
   },
   {
     id: 'flat-minimal',
@@ -52,17 +53,29 @@ function buildGridSizePrompt(gridSize?: number) {
   return '目标图纸很小，请进一步简化为图标级构图，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更少颜色和更大的色块。'
 }
 
+function buildChibiGuardPrompt(styleId: string) {
+  if (styleId !== 'cute-chibi') return ''
+  return '重要：必须把人物变形为 2 头身超级 Q 版，不能保留写实脸或常规模型动漫身材。若参考图是真人或写实插画，需彻底卡通化变形，而不是仅美化原图。'
+}
+
+function buildFramingPrompt(styleId: string) {
+  if (styleId === 'cute-chibi') {
+    return '构图要求：全身或半身站立的 2 头身 Q 版构图，近景、紧凑裁切，主体居中，主体占画面 75-90%。不要只画写实大头特写。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
+  }
+  return '构图要求：近景、紧凑裁切，主体居中，主体占画面 75-90%。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
+}
+
 export function buildAgnesPrompt(styleId: string, extraPrompt = '', gridSize?: number) {
   const style = AGNES_STYLE_PRESETS.find((item) => item.id === styleId)
   if (!style) throw new Error('请选择一种 AI 风格')
 
   const parts = [AGNES_BASE_PROMPT, style.promptSuffix]
+  const chibiGuardPrompt = buildChibiGuardPrompt(styleId)
+  if (chibiGuardPrompt) parts.push(chibiGuardPrompt)
   const gridSizePrompt = buildGridSizePrompt(gridSize)
   if (gridSizePrompt) parts.push(gridSizePrompt)
   const trimmedExtra = extraPrompt.trim()
   if (trimmedExtra) parts.push(trimmedExtra)
-  parts.push(
-    '构图要求：近景、紧凑裁切，主体居中，主体占画面 75-90%。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。',
-  )
+  parts.push(buildFramingPrompt(styleId))
   return parts.join(' ')
 }
