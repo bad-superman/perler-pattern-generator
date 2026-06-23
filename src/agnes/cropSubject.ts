@@ -1,3 +1,5 @@
+import { findContentBounds, type ContentBounds } from './imageAnalysis'
+
 async function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -14,15 +16,6 @@ async function loadImage(file: File): Promise<HTMLImageElement> {
   })
 }
 
-function isBackgroundPixel(r: number, g: number, b: number, a: number) {
-  if (a < 80) return true
-  const min = Math.min(r, g, b)
-  const max = Math.max(r, g, b)
-  if (min > 238 && max - min < 18) return true
-  if (min > 228 && max - min < 30) return true
-  return false
-}
-
 function canvasToFile(canvas: HTMLCanvasElement, fileName: string, mimeType = 'image/png') {
   return new Promise<File>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -33,36 +26,6 @@ function canvasToFile(canvas: HTMLCanvasElement, fileName: string, mimeType = 'i
       resolve(new File([blob], fileName, { type: mimeType }))
     }, mimeType)
   })
-}
-
-interface ContentBounds {
-  minX: number
-  minY: number
-  maxX: number
-  maxY: number
-}
-
-function findContentBounds(width: number, height: number, data: Uint8ClampedArray): ContentBounds | null {
-  let minX = width
-  let minY = height
-  let maxX = 0
-  let maxY = 0
-  let found = false
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const offset = (y * width + x) * 4
-      if (isBackgroundPixel(data[offset], data[offset + 1], data[offset + 2], data[offset + 3])) continue
-      found = true
-      if (x < minX) minX = x
-      if (y < minY) minY = y
-      if (x > maxX) maxX = x
-      if (y > maxY) maxY = y
-    }
-  }
-
-  if (!found) return null
-  return { minX, minY, maxX, maxY }
 }
 
 function cropCanvasToBounds(

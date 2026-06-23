@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCirc
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
+import { cropToReferenceFraming } from './agnes/referenceFraming'
 import { AGNES_STYLE_PRESETS } from './agnes/styles'
 import {
   DEFAULT_PALETTE_BRAND,
@@ -594,7 +595,8 @@ function App() {
         gridSize,
         size,
       })
-      const croppedFile = await cropSubjectFromImage(aiFile)
+      const framedFile = await cropToReferenceFraming(aiFile, refFile)
+      const croppedFile = await cropSubjectFromImage(framedFile)
       await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
