@@ -349,6 +349,96 @@ async function analyzePattern(page) {
       return components
     }
 
+    function componentStats(mask) {
+      const visited = new Uint8Array(cols * rows)
+      const components = []
+      const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < cols; x += 1) {
+          const start = idx(x, y)
+          if (visited[start] || !mask[start]) continue
+
+          const queue = [[x, y]]
+          let count = 0
+          let minCx = x
+          let minCy = y
+          let maxCx = x
+          let maxCy = y
+          visited[start] = 1
+
+          for (let head = 0; head < queue.length; head += 1) {
+            const [cx, cy] = queue[head]
+            count += 1
+            minCx = Math.min(minCx, cx)
+            minCy = Math.min(minCy, cy)
+            maxCx = Math.max(maxCx, cx)
+            maxCy = Math.max(maxCy, cy)
+            dirs.forEach(([dx, dy]) => {
+              const nx = cx + dx
+              const ny = cy + dy
+              if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+              const key = idx(nx, ny)
+              if (visited[key] || !mask[key]) return
+              visited[key] = 1
+              queue.push([nx, ny])
+            })
+          }
+
+          components.push({ count, minX: minCx, minY: minCy, maxX: maxCx, maxY: maxCy })
+        }
+      }
+
+      const largest = components.sort((a, b) => b.count - a.count)[0]?.count ?? 0
+      return {
+        count: components.length,
+        significantCount: components.filter((item) => item.count >= 3).length,
+        largestCount: largest,
+        largestRatio: activeCount ? largest / activeCount : 0,
+      }
+    }
+
+    function enclosedHoleStats() {
+      const visited = new Uint8Array(cols * rows)
+      const holes = []
+      const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+
+      for (let y = minY; y <= maxY; y += 1) {
+        for (let x = minX; x <= maxX; x += 1) {
+          const start = idx(x, y)
+          if (visited[start] || active[start]) continue
+
+          const queue = [[x, y]]
+          let count = 0
+          let touchesBounds = false
+          visited[start] = 1
+
+          for (let head = 0; head < queue.length; head += 1) {
+            const [cx, cy] = queue[head]
+            count += 1
+            if (cx === minX || cx === maxX || cy === minY || cy === maxY) touchesBounds = true
+            dirs.forEach(([dx, dy]) => {
+              const nx = cx + dx
+              const ny = cy + dy
+              if (nx < minX || nx > maxX || ny < minY || ny > maxY) return
+              const key = idx(nx, ny)
+              if (visited[key] || active[key]) return
+              visited[key] = 1
+              queue.push([nx, ny])
+            })
+          }
+
+          if (!touchesBounds) holes.push(count)
+        }
+      }
+
+      return {
+        count: holes.length,
+        totalArea: holes.reduce((total, count) => total + count, 0),
+        maxArea: holes.length ? Math.max(...holes) : 0,
+      }
+    }
+
     function eyeStats(left, right, expectedX, expectedY) {
       const local = windowStats(
         Math.max(left, Math.round(expectedX) - 2),
@@ -428,6 +518,8 @@ async function analyzePattern(page) {
       }
       bestMouthRun = Math.max(bestMouthRun, run)
     }
+    const activeComponents = componentStats(active)
+    const holes = enclosedHoleStats()
     const mouthCenter = windowStats(
       Math.max(mouthLeft, centerX - 3),
       mouthTop,
@@ -440,6 +532,11 @@ async function analyzePattern(page) {
       cellCount: cells.length,
       legendCount: document.querySelectorAll('.legend-item').length,
       bounds: { minX, minY, maxX, maxY, subjectW, subjectH },
+      integrity: {
+        activeComponents,
+        holes,
+        fillRatio: activeCount ? activeCount / Math.max(1, subjectW * subjectH) : 0,
+      },
       colorBalance: {
         activeCount,
         darkCount,
@@ -523,6 +620,10 @@ async function main() {
         && result.summary.includes('36×36')
         && result.cellCount === 1296
         && result.legendCount <= 7
+        && result.integrity.activeComponents.significantCount <= 1
+        && result.integrity.activeComponents.largestRatio >= 0.96
+        && result.integrity.holes.count <= 2
+        && result.integrity.holes.totalArea <= Math.max(4, Math.round(result.colorBalance.activeCount * 0.015))
         && result.colorBalance.darkRatio <= 0.78
         && result.colorBalance.vividRatio >= (testCase.label === 'pastel-low-contrast' ? 0.2 : 0.055)
         && result.eyes.left.count >= 4
