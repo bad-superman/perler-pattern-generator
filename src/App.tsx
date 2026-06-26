@@ -1136,6 +1136,74 @@ function merge36SimilarMinorShades(grid: BeadCell[][], selectedPalette: PaletteC
   return next
 }
 
+function merge36TinyColorSpeckles(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const visited = new Uint8Array(rows * cols)
+  const next = cloneGrid(grid)
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const startIndex = grid[y][x].colorIndex
+      const startKey = y * cols + x
+      if (
+        visited[startKey]
+        || startIndex < 0
+        || isDarkPaletteIndex(startIndex, selectedPalette)
+      ) {
+        continue
+      }
+
+      const component: Array<[number, number]> = []
+      const queue: Array<[number, number]> = [[x, y]]
+      visited[startKey] = 1
+
+      for (let head = 0; head < queue.length; head += 1) {
+        const [cx, cy] = queue[head]
+        component.push([cx, cy])
+        CARDINAL_DIRECTIONS.forEach(([dx, dy]) => {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+          const key = ny * cols + nx
+          if (visited[key] || grid[ny][nx].colorIndex !== startIndex) return
+          visited[key] = 1
+          queue.push([nx, ny])
+        })
+      }
+
+      if (component.length > 2) continue
+
+      const neighborIndexes: number[] = []
+      let activeNeighborCount = 0
+      component.forEach(([cx, cy]) => {
+        ALL_DIRECTIONS.forEach(([dx, dy]) => {
+          const neighborIndex = grid[cy + dy]?.[cx + dx]?.colorIndex ?? -1
+          if (neighborIndex < 0 || neighborIndex === startIndex) return
+          activeNeighborCount += 1
+          neighborIndexes.push(neighborIndex)
+        })
+      })
+      if (activeNeighborCount < component.length * 4) continue
+
+      const replacementIndex = getDominantIndex(neighborIndexes.filter((index) => (
+        !isDarkPaletteIndex(index, selectedPalette)
+      )))
+      if (replacementIndex < 0 || replacementIndex === startIndex) continue
+
+      component.forEach(([cx, cy]) => {
+        next[cy][cx] = makePaletteCell(replacementIndex, selectedPalette)
+      })
+    }
+  }
+
+  recountPalette(next, selectedPalette)
+  return next
+}
+
 function removeTinyDetachedCraftIslands(grid: BeadCell[][]) {
   const rows = grid.length
   const cols = grid[0]?.length ?? 0
@@ -1319,6 +1387,90 @@ function getBridgeFillIndex(
   if (darkIndex >= 0 && darkNeighborCount >= 2) return darkIndex
   const dominantIndex = getDominantIndex(neighborIndexes)
   return dominantIndex >= 0 ? dominantIndex : fallbackIndex
+}
+
+function hasExteriorNeighbor(exterior: Uint8Array, cols: number, rows: number, x: number, y: number) {
+  return CARDINAL_DIRECTIONS.some(([dx, dy]) => {
+    const nx = x + dx
+    const ny = y + dy
+    return nx < 0 || ny < 0 || nx >= cols || ny >= rows || exterior[ny * cols + nx] === 1
+  })
+}
+
+function connect36DarkDiagonalSteps(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+
+  const exterior = getExteriorEmptyMask(grid)
+  const next = cloneGrid(grid)
+  const subjectH = bounds.maxY - bounds.minY + 1
+  const featureBottom = bounds.minY + Math.round(subjectH * 0.78)
+  const isInFeatureBand = (y: number) => y <= featureBottom
+
+  const connectorScore = (x: number, y: number) => {
+    const currentIndex = grid[y]?.[x]?.colorIndex ?? -1
+    if (currentIndex < 0) return -1
+    if (isDarkPaletteIndex(currentIndex, selectedPalette)) return -1
+
+    const darkNeighborCount = ALL_DIRECTIONS.filter(([dx, dy]) => (
+      isDarkPaletteIndex(grid[y + dy]?.[x + dx]?.colorIndex ?? -1, selectedPalette)
+    )).length
+    const activeNeighborCount = getBridgeSupportScore(grid, x, y)
+    const isBoundary = hasExteriorNeighbor(exterior, cols, rows, x, y)
+    const isVivid = isVividSubjectPaletteIndex(currentIndex, selectedPalette)
+    if (!isBoundary && !isInFeatureBand(y)) return -1
+    if (darkNeighborCount < 2 && !isBoundary) return -1
+    if (isVivid && !isBoundary && darkNeighborCount < 3) return -1
+
+    return darkNeighborCount * 12
+      + activeNeighborCount * 2
+      + (isBoundary ? 14 : 0)
+      - (isVivid ? 10 : 0)
+  }
+
+  const connectPair = (candidates: Array<[number, number]>) => {
+    const candidate = candidates
+      .map(([x, y]) => ({ x, y, score: connectorScore(x, y) }))
+      .filter((item) => item.score >= 0)
+      .sort((a, b) => b.score - a.score)[0]
+    if (!candidate) return
+    placeCellIfUseful(next, selectedPalette, candidate.x, candidate.y, darkIndex)
+  }
+
+  for (let y = Math.max(0, bounds.minY - 1); y < Math.min(rows - 1, bounds.maxY + 1); y += 1) {
+    for (let x = Math.max(0, bounds.minX - 1); x < Math.min(cols - 1, bounds.maxX + 1); x += 1) {
+      const topLeft = grid[y][x].colorIndex
+      const topRight = grid[y][x + 1].colorIndex
+      const bottomLeft = grid[y + 1][x].colorIndex
+      const bottomRight = grid[y + 1][x + 1].colorIndex
+
+      if (
+        isDarkPaletteIndex(topLeft, selectedPalette)
+        && isDarkPaletteIndex(bottomRight, selectedPalette)
+        && !isDarkPaletteIndex(topRight, selectedPalette)
+        && !isDarkPaletteIndex(bottomLeft, selectedPalette)
+      ) {
+        connectPair([[x + 1, y], [x, y + 1]])
+      }
+
+      if (
+        isDarkPaletteIndex(topRight, selectedPalette)
+        && isDarkPaletteIndex(bottomLeft, selectedPalette)
+        && !isDarkPaletteIndex(topLeft, selectedPalette)
+        && !isDarkPaletteIndex(bottomRight, selectedPalette)
+      ) {
+        connectPair([[x, y], [x + 1, y + 1]])
+      }
+    }
+  }
+
+  return next
 }
 
 function connect36NearSubjectComponents(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
@@ -2091,6 +2243,7 @@ function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
   next = connect36NearSubjectComponents(next, selectedPalette, longSide)
   next = connectCraftDarkDetails(next, selectedPalette)
   next = bridge36DarkFeatureGaps(next, selectedPalette, longSide)
+  next = connect36DarkDiagonalSteps(next, selectedPalette, longSide)
   next = reinforceTinyDarkFeatures(next, selectedPalette, longSide)
   next = strengthen36FacialFeatures(next, selectedPalette, longSide)
   next = ensure36EyePair(next, selectedPalette, longSide)
@@ -2100,6 +2253,7 @@ function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
   next = thicken36OuterSilhouette(next, selectedPalette, longSide)
   next = cleanupCraftGrid(next, selectedPalette)
   next = merge36SimilarMinorShades(next, selectedPalette, longSide)
+  next = merge36TinyColorSpeckles(next, selectedPalette, longSide)
   next = removeTinyDetachedCraftIslands(next)
   recountPalette(next, selectedPalette)
   return next
