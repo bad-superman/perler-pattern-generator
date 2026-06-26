@@ -32,7 +32,7 @@ interface BeadCell {
 type BoardShape = 'ratio' | 'square'
 type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai'
-type SamplingMode = 'average' | 'dominant'
+type SamplingMode = 'average' | 'dominant' | 'feature'
 type QuantizeMode = 'default' | 'craft'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
@@ -46,8 +46,17 @@ const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
 const QUICK_GRID_SIZES = [32, 48, 64, 96] as const
 const CRAFT_DARK_LUMA_THRESHOLD = 82
+const CRAFT_FEATURE_LUMA_THRESHOLD = 96
 const CRAFT_BACKGROUND_DISTANCE_THRESHOLD = 34
 const CRAFT_BACKGROUND_SOFT_DISTANCE_THRESHOLD = 52
+const CRAFT_DETAIL_MIN_COVERAGE = 0.08
+const CRAFT_FEATURE_MIN_COVERAGE = 0.12
+const DEFAULT_AI_STYLE_ID = 'cute-chibi'
+const DEFAULT_AI_EXTRA_PROMPT = [
+  '目标：艳丽、完整、易拼的可爱 Q 版拼豆图纸。',
+  '请主动把原图改造成糖果色 Q 版，不要照搬原图的灰暗颜色或写实光影。',
+  '五官和边缘要为小尺寸拼豆重画：大眼睛、短而完整的嘴巴、连续粗轮廓、少色大色块。',
+].join(' ')
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -56,6 +65,14 @@ function hexToRgb(hex: string) {
     g: parseInt(normalized.slice(2, 4), 16),
     b: parseInt(normalized.slice(4, 6), 16),
   }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function clampByte(value: number) {
+  return Math.round(clamp(value, 0, 255))
 }
 
 function nearestPaletteColor(r: number, g: number, b: number, palette: readonly BeadPaletteEntry[]) {
@@ -75,6 +92,65 @@ function nearestPaletteColor(r: number, g: number, b: number, palette: readonly 
 function getColorLuma(hex: string) {
   const { r, g, b } = hexToRgb(hex)
   return r * 0.299 + g * 0.587 + b * 0.114
+}
+
+function getRgbLuma(color: RgbColor) {
+  return color.r * 0.299 + color.g * 0.587 + color.b * 0.114
+}
+
+interface HslColor {
+  h: number
+  s: number
+  l: number
+}
+
+function rgbToHsl({ r, g, b }: RgbColor): HslColor {
+  const normalizedR = r / 255
+  const normalizedG = g / 255
+  const normalizedB = b / 255
+  const max = Math.max(normalizedR, normalizedG, normalizedB)
+  const min = Math.min(normalizedR, normalizedG, normalizedB)
+  const lightness = (max + min) / 2
+
+  if (max === min) return { h: 0, s: 0, l: lightness }
+
+  const delta = max - min
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min)
+  let hue: number
+  if (max === normalizedR) {
+    hue = (normalizedG - normalizedB) / delta + (normalizedG < normalizedB ? 6 : 0)
+  } else if (max === normalizedG) {
+    hue = (normalizedB - normalizedR) / delta + 2
+  } else {
+    hue = (normalizedR - normalizedG) / delta + 4
+  }
+
+  return { h: hue / 6, s: saturation, l: lightness }
+}
+
+function hueToRgb(p: number, q: number, t: number) {
+  let nextT = t
+  if (nextT < 0) nextT += 1
+  if (nextT > 1) nextT -= 1
+  if (nextT < 1 / 6) return p + (q - p) * 6 * nextT
+  if (nextT < 1 / 2) return q
+  if (nextT < 2 / 3) return p + (q - p) * (2 / 3 - nextT) * 6
+  return p
+}
+
+function hslToRgb({ h, s, l }: HslColor): RgbColor {
+  if (s === 0) {
+    const value = clampByte(l * 255)
+    return { r: value, g: value, b: value }
+  }
+
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+  return {
+    r: clampByte(hueToRgb(p, q, h + 1 / 3) * 255),
+    g: clampByte(hueToRgb(p, q, h) * 255),
+    b: clampByte(hueToRgb(p, q, h - 1 / 3) * 255),
+  }
 }
 
 function isDarkPaletteColor(entry: BeadPaletteEntry) {
@@ -146,7 +222,7 @@ function getExportCellSize(gridCols: number, gridRows: number) {
 }
 
 function getSamplingScale(cols: number, rows: number) {
-  return Math.max(cols, rows) <= 48 ? 4 : 1
+  return Math.max(cols, rows) <= 64 ? 4 : 1
 }
 
 function drawImageToSampledGrid(
@@ -191,6 +267,11 @@ function drawImageToSampledGrid(
       let b = 0
       let a = 0
       let visibleCount = 0
+      let darkR = 0
+      let darkG = 0
+      let darkB = 0
+      let darkA = 0
+      let darkCount = 0
       const buckets = new Map<string, { count: number; r: number; g: number; b: number; a: number }>()
 
       for (let sampleY = 0; sampleY < sampleScale; sampleY += 1) {
@@ -208,8 +289,16 @@ function drawImageToSampledGrid(
           b += sourceB
           a += alpha
           visibleCount += 1
+          const luma = sourceR * 0.299 + sourceG * 0.587 + sourceB * 0.114
+          if (samplingMode === 'feature' && luma <= CRAFT_FEATURE_LUMA_THRESHOLD) {
+            darkR += sourceR
+            darkG += sourceG
+            darkB += sourceB
+            darkA += alpha
+            darkCount += 1
+          }
 
-          if (samplingMode === 'dominant') {
+          if (samplingMode === 'dominant' || samplingMode === 'feature') {
             const bucketKey = quantizeRgbBucket(sourceR, sourceG, sourceB)
             const bucket = buckets.get(bucketKey) ?? { count: 0, r: 0, g: 0, b: 0, a: 0 }
             bucket.count += 1
@@ -225,12 +314,28 @@ function drawImageToSampledGrid(
       const targetOffset = (y * cols + x) * 4
       if (visibleCount === 0) {
         averaged.data[targetOffset + 3] = 0
+      } else if (
+        samplingMode === 'feature'
+        && darkCount / totalSamples >= CRAFT_FEATURE_MIN_COVERAGE
+      ) {
+        averaged.data[targetOffset] = Math.round(darkR / darkCount)
+        averaged.data[targetOffset + 1] = Math.round(darkG / darkCount)
+        averaged.data[targetOffset + 2] = Math.round(darkB / darkCount)
+        averaged.data[targetOffset + 3] = Math.max(180, Math.round(darkA / darkCount))
       } else if (samplingMode === 'dominant' && buckets.size) {
         const dominant = [...buckets.values()].sort((left, right) => right.count - left.count)[0]
         averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
         averaged.data[targetOffset + 1] = Math.round(dominant.g / dominant.count)
         averaged.data[targetOffset + 2] = Math.round(dominant.b / dominant.count)
         averaged.data[targetOffset + 3] = Math.round(dominant.a / totalSamples)
+      } else if (samplingMode === 'feature' && buckets.size) {
+        const dominant = [...buckets.values()].sort((left, right) => right.count - left.count)[0]
+        averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
+        averaged.data[targetOffset + 1] = Math.round(dominant.g / dominant.count)
+        averaged.data[targetOffset + 2] = Math.round(dominant.b / dominant.count)
+        averaged.data[targetOffset + 3] = visibleCount / totalSamples >= CRAFT_DETAIL_MIN_COVERAGE
+          ? 255
+          : Math.round(dominant.a / totalSamples)
       } else {
         averaged.data[targetOffset] = Math.round(r / visibleCount)
         averaged.data[targetOffset + 1] = Math.round(g / visibleCount)
@@ -341,6 +446,44 @@ function removeCraftEdgeBackground(imageData: ImageData) {
   }
 
   return cleaned
+}
+
+function boostCraftSourceColors(imageData: ImageData) {
+  const enhanced = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height)
+  const { data } = enhanced
+
+  for (let offset = 0; offset < data.length; offset += 4) {
+    if (data[offset + 3] < 80) continue
+    const color = { r: data[offset], g: data[offset + 1], b: data[offset + 2] }
+    const luma = getRgbLuma(color)
+    const hsl = rgbToHsl(color)
+    const chroma = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)
+
+    if (luma <= CRAFT_DARK_LUMA_THRESHOLD) {
+      const darkened = hslToRgb({
+        h: hsl.h,
+        s: clamp(hsl.s * 1.08 + 0.04, 0, 0.92),
+        l: clamp(hsl.l * 0.82, 0.02, 0.24),
+      })
+      data[offset] = darkened.r
+      data[offset + 1] = darkened.g
+      data[offset + 2] = darkened.b
+      data[offset + 3] = Math.max(data[offset + 3], 230)
+      continue
+    }
+
+    const boosted = hslToRgb({
+      h: hsl.h,
+      s: chroma < 16 ? clamp(hsl.s * 1.08, 0, 0.38) : clamp(hsl.s * 1.38 + 0.08, 0.32, 0.95),
+      l: clamp(hsl.l * 1.05 + 0.025, 0.25, 0.88),
+    })
+    data[offset] = boosted.r
+    data[offset + 1] = boosted.g
+    data[offset + 2] = boosted.b
+    data[offset + 3] = Math.max(data[offset + 3], 220)
+  }
+
+  return enhanced
 }
 
 function getPaletteEdgeScores(imageData: ImageData, paletteIndexes: number[], palette: readonly BeadPaletteEntry[]) {
@@ -454,6 +597,52 @@ function buildGridFromImageData(
   return grid
 }
 
+const CARDINAL_DIRECTIONS = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const
+const ALL_DIRECTIONS = [
+  [0, -1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+] as const
+
+function cloneGrid(grid: BeadCell[][]) {
+  return grid.map((row) => row.map((cell) => ({ ...cell })))
+}
+
+function recountPalette(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
+  selectedPalette.forEach((color) => { color.count = 0 })
+  grid.forEach((row) => row.forEach((cell) => {
+    if (cell.colorIndex >= 0) selectedPalette[cell.colorIndex].count += 1
+  }))
+}
+
+function makePaletteCell(index: number, selectedPalette: PaletteColor[]): BeadCell {
+  return {
+    colorIndex: index,
+    hex: selectedPalette[index].hex,
+    symbol: selectedPalette[index].symbol,
+  }
+}
+
+function getDominantIndex(indexes: number[]) {
+  const counts = new Map<number, number>()
+  indexes.forEach((index) => {
+    if (index >= 0) counts.set(index, (counts.get(index) ?? 0) + 1)
+  })
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? -1
+}
+
+function getCraftDarkIndex(indexes: number[], selectedPalette: PaletteColor[]) {
+  const darkIndexes = indexes.filter((index) => (
+    index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  ))
+  return getDominantIndex(darkIndexes)
+}
+
 function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
   const rows = grid.length
   const cols = grid[0]?.length ?? 0
@@ -461,14 +650,13 @@ function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
 
   const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
   const next = grid.map((row) => row.map((cell) => ({ ...cell })))
-  const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
       const cell = grid[y][x]
       if (cell.colorIndex < 0 || isDarkIndex(cell.colorIndex)) continue
       const neighborCounts = new Map<number, number>()
-      directions.forEach(([dx, dy]) => {
+      CARDINAL_DIRECTIONS.forEach(([dx, dy]) => {
         const nx = x + dx
         const ny = y + dy
         if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
@@ -486,10 +674,190 @@ function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
     }
   }
 
-  selectedPalette.forEach((color) => { color.count = 0 })
-  next.forEach((row) => row.forEach((cell) => {
-    if (cell.colorIndex >= 0) selectedPalette[cell.colorIndex].count += 1
-  }))
+  recountPalette(next, selectedPalette)
+  return next
+}
+
+function closeCraftSubjectGaps(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const next = cloneGrid(grid)
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (grid[y][x].colorIndex >= 0) continue
+      const cardinalIndexes = CARDINAL_DIRECTIONS
+        .map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
+        .filter((index) => index >= 0)
+      const allIndexes = ALL_DIRECTIONS
+        .map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
+        .filter((index) => index >= 0)
+      if (cardinalIndexes.length >= 3 || allIndexes.length >= 6) {
+        const fillIndex = getDominantIndex(cardinalIndexes.length >= 3 ? cardinalIndexes : allIndexes)
+        if (fillIndex >= 0) next[y][x] = makePaletteCell(fillIndex, selectedPalette)
+      }
+    }
+  }
+
+  return next
+}
+
+function connectCraftDarkDetails(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const next = cloneGrid(grid)
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const currentIndex = grid[y][x].colorIndex
+      if (isDarkIndex(currentIndex)) continue
+
+      const left = grid[y]?.[x - 1]?.colorIndex ?? -1
+      const right = grid[y]?.[x + 1]?.colorIndex ?? -1
+      const up = grid[y - 1]?.[x]?.colorIndex ?? -1
+      const down = grid[y + 1]?.[x]?.colorIndex ?? -1
+      const allIndexes = ALL_DIRECTIONS.map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
+      const darkNeighborCount = allIndexes.filter(isDarkIndex).length
+
+      let fillIndex = -1
+      if (isDarkIndex(left) && isDarkIndex(right)) fillIndex = getCraftDarkIndex([left, right], selectedPalette)
+      if (fillIndex < 0 && isDarkIndex(up) && isDarkIndex(down)) fillIndex = getCraftDarkIndex([up, down], selectedPalette)
+      if (fillIndex < 0 && darkNeighborCount >= 3) fillIndex = getCraftDarkIndex(allIndexes, selectedPalette)
+
+      if (fillIndex >= 0) next[y][x] = makePaletteCell(fillIndex, selectedPalette)
+    }
+  }
+
+  return next
+}
+
+function reinforceTinyDarkFeatures(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols || longSide > 64) return grid
+
+  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const visited = new Uint8Array(rows * cols)
+  const next = cloneGrid(grid)
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const startIndex = grid[y][x].colorIndex
+      const startKey = y * cols + x
+      if (visited[startKey] || !isDarkIndex(startIndex)) continue
+
+      const component: Array<[number, number]> = []
+      const queue: Array<[number, number]> = [[x, y]]
+      visited[startKey] = 1
+
+      for (let head = 0; head < queue.length; head += 1) {
+        const [cx, cy] = queue[head]
+        component.push([cx, cy])
+        ALL_DIRECTIONS.forEach(([dx, dy]) => {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+          const key = ny * cols + nx
+          if (visited[key] || grid[ny][nx].colorIndex !== startIndex) return
+          visited[key] = 1
+          queue.push([nx, ny])
+        })
+      }
+
+      if (component.length < 1 || component.length > 2) continue
+      const averageY = component.reduce((total, [, cy]) => total + cy, 0) / component.length
+      if (averageY > rows * 0.78) continue
+
+      const candidates = new Map<string, { x: number; y: number; solid: number; empty: number }>()
+      component.forEach(([cx, cy]) => {
+        CARDINAL_DIRECTIONS.forEach(([dx, dy]) => {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+          if (grid[ny][nx].colorIndex < 0 || isDarkIndex(grid[ny][nx].colorIndex)) return
+          const key = `${nx},${ny}`
+          if (candidates.has(key)) return
+
+          let solid = 0
+          let empty = 0
+          ALL_DIRECTIONS.forEach(([aroundDx, aroundDy]) => {
+            const aroundIndex = grid[ny + aroundDy]?.[nx + aroundDx]?.colorIndex ?? -1
+            if (aroundIndex >= 0) solid += 1
+            else empty += 1
+          })
+          candidates.set(key, { x: nx, y: ny, solid, empty })
+        })
+      })
+
+      const candidate = [...candidates.values()]
+        .filter((item) => item.solid >= item.empty)
+        .sort((a, b) => b.solid - a.solid || Math.abs(a.y - averageY) - Math.abs(b.y - averageY))[0]
+      if (candidate) next[candidate.y][candidate.x] = makePaletteCell(startIndex, selectedPalette)
+    }
+  }
+
+  return next
+}
+
+function removeTinyDetachedCraftIslands(grid: BeadCell[][]) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const visited = new Uint8Array(rows * cols)
+  const components: Array<Array<[number, number]>> = []
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const startKey = y * cols + x
+      if (visited[startKey] || grid[y][x].colorIndex < 0) continue
+
+      const component: Array<[number, number]> = []
+      const queue: Array<[number, number]> = [[x, y]]
+      visited[startKey] = 1
+      for (let head = 0; head < queue.length; head += 1) {
+        const [cx, cy] = queue[head]
+        component.push([cx, cy])
+        CARDINAL_DIRECTIONS.forEach(([dx, dy]) => {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+          const key = ny * cols + nx
+          if (visited[key] || grid[ny][nx].colorIndex < 0) return
+          visited[key] = 1
+          queue.push([nx, ny])
+        })
+      }
+      components.push(component)
+    }
+  }
+
+  if (components.length <= 1) return grid
+  const largest = Math.max(...components.map((component) => component.length))
+  const minKeepSize = Math.max(3, Math.round(largest * 0.012))
+  const next = cloneGrid(grid)
+  components.forEach((component) => {
+    if (component.length >= minKeepSize) return
+    component.forEach(([x, y]) => {
+      next[y][x] = { colorIndex: -1, hex: EMPTY_CELL_HEX, symbol: '' }
+    })
+  })
+  return next
+}
+
+function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  let next = cleanupCraftGrid(grid, selectedPalette)
+  next = closeCraftSubjectGaps(next, selectedPalette)
+  next = connectCraftDarkDetails(next, selectedPalette)
+  next = reinforceTinyDarkFeatures(next, selectedPalette, longSide)
+  next = cleanupCraftGrid(next, selectedPalette)
+  next = removeTinyDetachedCraftIslands(next)
+  recountPalette(next, selectedPalette)
   return next
 }
 
@@ -725,8 +1093,8 @@ function App() {
   const [palette, setPalette] = useState<PaletteColor[]>([])
   const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
-  const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
-  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiStyleId, setAiStyleId] = useState(DEFAULT_AI_STYLE_ID)
+  const [aiPrompt, setAiPrompt] = useState(DEFAULT_AI_EXTRA_PROMPT)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isAiGenerating, setIsAiGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -789,7 +1157,7 @@ function App() {
     const updatePreview = options?.updatePreview ?? true
     const sharpQuantize = options?.sharpQuantize ?? false
     const quantizeMode = options?.quantizeMode ?? 'default'
-    const samplingMode: SamplingMode = quantizeMode === 'craft' ? 'dominant' : 'average'
+    const samplingMode: SamplingMode = quantizeMode === 'craft' ? 'feature' : 'average'
     const beadPalette = getPaletteColors(nextPaletteBrand)
     setError('')
     setIsProcessing(true)
@@ -805,7 +1173,9 @@ function App() {
       }
 
       const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize, samplingMode)
-      const quantizeImageData = quantizeMode === 'craft' ? removeCraftEdgeBackground(imageData) : imageData
+      const quantizeImageData = quantizeMode === 'craft'
+        ? boostCraftSourceColors(removeCraftEdgeBackground(imageData))
+        : imageData
       const maxColorsForMode = quantizeMode === 'craft' ? getCraftMaxColors(Math.max(cols, rows), nextMaxColors) : nextMaxColors
       const selected = selectPaletteIndexes(quantizeImageData, beadPalette, maxColorsForMode, quantizeMode)
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
@@ -820,7 +1190,7 @@ function App() {
 
       const selectedColors = selected.map((index) => beadPalette[index])
       const grid = buildGridFromImageData(quantizeImageData, selectedPalette, selectedColors)
-      const finalGrid = quantizeMode === 'craft' ? cleanupCraftGrid(grid, selectedPalette) : grid
+      const finalGrid = quantizeMode === 'craft' ? polishCraftGrid(grid, selectedPalette, Math.max(cols, rows)) : grid
 
       setPalette(selectedPalette.filter((color) => color.count > 0))
       setPattern(finalGrid)

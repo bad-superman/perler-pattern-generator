@@ -6,7 +6,7 @@ export interface AgnesStylePreset {
 }
 
 export const AGNES_BASE_PROMPT =
-  '把参考图转换成适合拼豆图纸生成的拼豆分色稿，重点突出主体。放大主体，让主体占画面面积的 82-95%。使用纯色平涂色块，不要渐变、不要柔和阴影、不要抗锯齿、不要真实照片纹理。保持高对比、硬边缘、粗深色轮廓、有限配色和适合小尺寸拼豆网格的图标化构图。背景必须是透明或单一浅色空白，并且不应作为拼豆内容；不要大面积空白边距，不要让小主体漂浮在大片空背景中。'
+  '把参考图重新设计成适合拼豆图纸生成的低分辨率拼豆分色稿，而不是写实照片滤镜。重点突出主体，放大主体，让主体占画面面积的 86-96%。使用纯色平涂色块，不要渐变、不要柔和阴影、不要抗锯齿、不要真实照片纹理。保持高对比、硬边缘、连续粗深色轮廓、有限配色和适合 24-56 格小尺寸拼豆网格的图标化构图。所有关键线条和五官都要能落到实际拼豆格上：眼睛、嘴巴、脸型、头发边缘和服装大特征必须完整、清楚、不可断裂。背景必须是透明或单一浅色空白，并且不应作为拼豆内容；不要大面积空白边距，不要让小主体漂浮在大片空背景中。'
 
 export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
   {
@@ -25,9 +25,9 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
   {
     id: 'cute-chibi',
     label: '可爱 Q 版',
-    description: '像素 Q 版，大头小身体',
+    description: '艳丽、完整、易拼的大头小身体',
     promptSuffix:
-      'Turn the image on the right into chibi pixel art like the character on the left. Huge head. Tiny body. Low-res grid. Cute exaggeration. Game-ready look. --ar 1:1 --style raw --c 20',
+      '可爱 Q 版拼豆图纸风格：把参考图改造成 kawaii chibi / cute mascot pixel bead chart。必须大头小身体，头部占主体高度 60-72%，身体短圆，整体 2-3 头身以内；表情要比原图更可爱。眼睛要大、亮、完整，每只眼在最终小图中至少约 2-4 颗豆宽，使用深色外形加少量高光；嘴巴必须是完整短弧线或小 V 形，至少约 2-3 颗豆长，不要细到消失；鼻子可省略或只用一个浅色小点。颜色不要忠实复制照片，要升级成更艳丽的糖果色、玩具色、动漫贴纸色：更高饱和、更高明度、更强冷暖对比，但仍然限制在少量大色块。使用 2-3 像素厚的连续深色轮廓包住头发、脸、身体、手和重要配件；边缘不能断裂。删除写实毛孔、皮肤纹理、碎发、复杂阴影、小背景物件和文字。最终看起来应像可直接照着摆豆的 Q 版像素拼豆图，而不是照片、油画或复杂插画。',
   },
   {
     id: 'flat-minimal',
@@ -58,19 +58,21 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
 function buildGridSizePrompt(gridSize?: number) {
   if (!gridSize) return ''
   if (gridSize <= 32) {
-    return '最终图纸最长边只有 24-32 格，请按超小拼豆图处理：最多 6 个主体主色，极粗轮廓，五官只保留眼睛和短嘴线，删除纹理、小物件和背景，只保留能在小格子中看懂的主体轮廓。背景不能占用拼豆格。'
+    return '最终图纸最长边只有 24-32 格，请按超小拼豆图处理：最多 5-6 个主体主色，使用更艳丽的高饱和主色，极粗连续轮廓，五官必须夸张放大；眼睛至少 2 格宽、嘴巴至少 2 格长，宁可牺牲真实比例也要保证小眼睛和小嘴巴完整可拼。删除纹理、小物件和背景，只保留能在小格子中看懂的主体轮廓。背景不能占用拼豆格。'
   }
   if (gridSize <= 48) {
-    return '最终图纸最长边约 32-48 格，请使用 6-8 个主体主色和大色块，保留发型、眼睛、嘴巴、脸型、手势和服装大特征，避免任何渐变、碎阴影和细小纹理。背景必须极简并可被裁掉，不能成为图案主体。'
+    return '最终图纸最长边约 32-48 格，请使用 6-8 个主体主色和大色块，颜色要比参考图更鲜艳、更糖果色。保留并放大发型、眼睛、嘴巴、脸型、手势和服装大特征；眼睛、嘴巴、轮廓线必须连续完整，避免任何渐变、碎阴影、发丝、布料纹理和小到一格都看不懂的细节。背景必须极简并可被裁掉，不能成为图案主体。'
   }
   if (gridSize <= 56) {
-    return '目标图纸较小，请进一步简化为图标级构图，使用 8-10 个主体主色，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更大的色块。背景不要参与拼豆。'
+    return '目标图纸较小，请进一步简化为图标级构图，使用 8-10 个主体主色并提高饱和度，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更大的色块。五官和外轮廓不能断线，背景不要参与拼豆。'
   }
   return '即使目标图纸较大，也请保持拼豆友好的有限配色、清晰轮廓和硬边缘，避免照片级渐变和细碎纹理。'
 }
 
 function buildFramingPrompt(styleId: string) {
-  if (styleId === 'cute-chibi') return ''
+  if (styleId === 'cute-chibi') {
+    return '构图要求：做成 1:1 方形贴纸/头像图标感的 Q 版主体，主体居中并尽量铺满画面，保留很窄安全边距。参考图是半身或头像时，不要擅自补画参考图没有出现的腿和鞋；参考图是全身时，把身体压缩成短圆 Q 版比例。背景使用透明或单一浅色空白，不要场景背景、道具堆叠、文字、水印或复杂光效。'
+  }
   return '构图要求：近景、紧凑裁切，主体居中，主体占画面 82-95%。背景使用透明或单一浅色极简背景，只在必要时保留很窄边距，并确保背景与主体有清楚边界便于后续删除。移除干扰性的场景、背景细节、文字和水印。人像请保留发型、眼睛、嘴巴、脸型、手势和服装图案，用深色轮廓分隔头发、脸、手、脖子和衣服。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
 }
 
@@ -84,7 +86,7 @@ export function buildAgnesPrompt(
   if (!style) throw new Error('请选择一种 AI 风格')
 
   const parts: string[] = []
-  if (styleId !== 'cute-chibi') parts.push(AGNES_BASE_PROMPT)
+  parts.push(AGNES_BASE_PROMPT)
   if (compositionHint.trim()) parts.push(compositionHint.trim())
   parts.push(style.promptSuffix)
   const gridSizePrompt = buildGridSizePrompt(gridSize)
