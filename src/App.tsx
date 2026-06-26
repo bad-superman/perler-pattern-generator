@@ -58,6 +58,9 @@ const CRAFT_DETAIL_MIN_COVERAGE = 0.08
 const CRAFT_FEATURE_MIN_COVERAGE = 0.12
 const CRAFT_36_DETAIL_MIN_COVERAGE = 0.04
 const CRAFT_36_FEATURE_MIN_COVERAGE = 0.055
+const CRAFT_36_STRUCTURE_LUMA_MAX = 190
+const CRAFT_36_STRUCTURE_NEIGHBOR_GAP = 26
+const CRAFT_36_STRUCTURE_CONTRAST = 86
 const DEFAULT_AI_STYLE_ID = 'cute-chibi'
 const DEFAULT_AI_EXTRA_PROMPT = [
   '目标：36×36 也清晰完整的艳丽可爱 Q 版拼豆图纸。',
@@ -131,6 +134,54 @@ function isVividSubjectSourceColor(color: RgbColor) {
     && getRgbChroma(color) >= 48
     && luma >= 35
     && luma <= 245
+}
+
+function isTinyGridMutedStructureSourceColor(color: RgbColor, luma = getRgbLuma(color)) {
+  if (isCraftLineLikeDark(color, luma, CRAFT_36_FEATURE_LUMA_THRESHOLD)) return false
+  if (luma > CRAFT_36_STRUCTURE_LUMA_MAX || luma < CRAFT_COLORED_DARK_LINE_LUMA_THRESHOLD) return false
+
+  const hsl = rgbToHsl(color)
+  const chroma = getRgbChroma(color)
+  const lineDarkEnough = luma <= 138 || (luma <= 156 && chroma <= 42 && hsl.s <= 0.18)
+  const saturatedVividFill = isVividSubjectSourceColor(color) && hsl.s >= 0.42 && chroma >= 64
+  const neutralOrMutedLine = chroma <= 72 || hsl.s <= 0.42
+  return lineDarkEnough && neutralOrMutedLine && !saturatedVividFill
+}
+
+function hasTinyGridStructureContrast(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  color: RgbColor,
+  luma = getRgbLuma(color),
+) {
+  if (!isTinyGridMutedStructureSourceColor(color, luma)) return false
+
+  let neighborCount = 0
+  let brighterNeighborCount = 0
+  let contrastSum = 0
+  let maxContrast = 0
+
+  ALL_DIRECTIONS.forEach(([dx, dy]) => {
+    const nx = x + dx
+    const ny = y + dy
+    if (nx < 0 || ny < 0 || nx >= width || ny >= height) return
+    const neighborOffset = getImageDataOffset(nx, ny, width)
+    if (data[neighborOffset + 3] < 80) return
+    const neighbor = getImageDataColor(data, neighborOffset)
+    const neighborLuma = getRgbLuma(neighbor)
+    const contrast = colorDistanceManhattan(color, neighbor)
+    neighborCount += 1
+    contrastSum += contrast
+    maxContrast = Math.max(maxContrast, contrast)
+    if (neighborLuma - luma >= CRAFT_36_STRUCTURE_NEIGHBOR_GAP) brighterNeighborCount += 1
+  })
+
+  return neighborCount >= 4
+    && brighterNeighborCount >= 3
+    && (maxContrast >= CRAFT_36_STRUCTURE_CONTRAST || contrastSum / neighborCount >= CRAFT_36_STRUCTURE_CONTRAST * 0.62)
 }
 
 function isFeatureDarkColor(hex: string) {
@@ -390,6 +441,15 @@ function drawImageToSampledGrid(
       let darkA = 0
       let darkLumaSum = 0
       let darkCount = 0
+      let structureR = 0
+      let structureG = 0
+      let structureB = 0
+      let structureA = 0
+      let structureCount = 0
+      let structureMinSampleX = sampleScale
+      let structureMinSampleY = sampleScale
+      let structureMaxSampleX = -1
+      let structureMaxSampleY = -1
       let darkMinSampleX = sampleScale
       let darkMinSampleY = sampleScale
       let darkMaxSampleX = -1
@@ -424,6 +484,20 @@ function drawImageToSampledGrid(
             darkMinSampleY = Math.min(darkMinSampleY, sampleY)
             darkMaxSampleX = Math.max(darkMaxSampleX, sampleX)
             darkMaxSampleY = Math.max(darkMaxSampleY, sampleY)
+          } else if (
+            samplingMode === 'feature'
+            && longSide <= 40
+            && hasTinyGridStructureContrast(source, canvas.width, canvas.height, sourceX, sourceY, sourceColor, luma)
+          ) {
+            structureR += sourceR
+            structureG += sourceG
+            structureB += sourceB
+            structureA += alpha
+            structureCount += 1
+            structureMinSampleX = Math.min(structureMinSampleX, sampleX)
+            structureMinSampleY = Math.min(structureMinSampleY, sampleY)
+            structureMaxSampleX = Math.max(structureMaxSampleX, sampleX)
+            structureMaxSampleY = Math.max(structureMaxSampleY, sampleY)
           }
 
           if (samplingMode === 'dominant' || samplingMode === 'feature') {
@@ -502,6 +576,46 @@ function drawImageToSampledGrid(
         averaged.data[targetOffset + 1] = Math.round(darkG / darkCount)
         averaged.data[targetOffset + 2] = Math.round(darkB / darkCount)
         averaged.data[targetOffset + 3] = Math.max(180, Math.round(darkA / darkCount))
+      } else if (samplingMode === 'feature' && longSide <= 40 && structureCount > 0) {
+        const structureCoverage = structureCount / totalSamples
+        const structureSpanX = structureMaxSampleX >= structureMinSampleX ? structureMaxSampleX - structureMinSampleX + 1 : 0
+        const structureSpanY = structureMaxSampleY >= structureMinSampleY ? structureMaxSampleY - structureMinSampleY + 1 : 0
+        const hasLineStructure = structureCoverage >= detailMinCoverage * 0.55
+          && (
+            structureSpanX >= Math.max(3, Math.round(sampleScale * 0.38))
+            || structureSpanY >= Math.max(3, Math.round(sampleScale * 0.38))
+            || (structureSpanX >= 2 && structureSpanY >= 2 && structureSpanX + structureSpanY >= Math.round(sampleScale * 0.72))
+          )
+        if (hasLineStructure) {
+          const lineColor = hslToRgb({
+            h: rgbToHsl({
+              r: Math.round(structureR / structureCount),
+              g: Math.round(structureG / structureCount),
+              b: Math.round(structureB / structureCount),
+            }).h,
+            s: 0.12,
+            l: 0.14,
+          })
+          averaged.data[targetOffset] = lineColor.r
+          averaged.data[targetOffset + 1] = lineColor.g
+          averaged.data[targetOffset + 2] = lineColor.b
+          averaged.data[targetOffset + 3] = Math.max(190, Math.round(structureA / structureCount))
+        } else {
+          const dominant = buckets.size ? [...buckets.values()].sort((left, right) => right.count - left.count)[0] : null
+          if (dominant) {
+            averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
+            averaged.data[targetOffset + 1] = Math.round(dominant.g / dominant.count)
+            averaged.data[targetOffset + 2] = Math.round(dominant.b / dominant.count)
+            averaged.data[targetOffset + 3] = visibleCount / totalSamples >= detailMinCoverage
+              ? 255
+              : Math.round(dominant.a / totalSamples)
+          } else {
+            averaged.data[targetOffset] = Math.round(r / visibleCount)
+            averaged.data[targetOffset + 1] = Math.round(g / visibleCount)
+            averaged.data[targetOffset + 2] = Math.round(b / visibleCount)
+            averaged.data[targetOffset + 3] = Math.round(a / totalSamples)
+          }
+        }
       } else if (samplingMode === 'dominant' && buckets.size) {
         const dominant = [...buckets.values()].sort((left, right) => right.count - left.count)[0]
         averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
@@ -1878,6 +1992,37 @@ function getDarkWindowStats(
   }
 }
 
+function getBestHorizontalDarkRunInRegion(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  let bestRun = 0
+  let bestY = -1
+
+  for (let y = Math.max(0, top); y <= Math.min(rows - 1, bottom); y += 1) {
+    let currentRun = 0
+    for (let x = Math.max(0, left); x <= Math.min(cols - 1, right); x += 1) {
+      if (isDarkPaletteIndex(grid[y][x].colorIndex, selectedPalette)) {
+        currentRun += 1
+      } else {
+        currentRun = 0
+      }
+      if (currentRun > bestRun) {
+        bestRun = currentRun
+        bestY = y
+      }
+    }
+  }
+
+  return { bestRun, bestY }
+}
+
 function drawReadable36Eye(
   target: BeadCell[][],
   source: BeadCell[][],
@@ -2083,11 +2228,23 @@ function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[]
     centerX + Math.max(2, Math.round(subjectW * 0.12)),
     expectedMouthY + 2,
   )
+  const horizontalRun = getBestHorizontalDarkRunInRegion(
+    grid,
+    selectedPalette,
+    mouthXStart,
+    mouthYStart,
+    mouthXEnd,
+    mouthYEnd,
+  )
 
-  if (bestDarkCount >= 3 && centerStats.count >= 2) return grid
+  if (horizontalRun.bestRun >= 3 && centerStats.count >= 2 && centerStats.width >= 3) return grid
 
   const next = cloneGrid(grid)
-  const mouthY = bestDarkCount >= 2 && bestY >= 0 ? bestY : expectedMouthY
+  const mouthY = horizontalRun.bestRun >= 2 && horizontalRun.bestY >= 0
+    ? horizontalRun.bestY
+    : bestDarkCount >= 2 && bestY >= 0
+      ? bestY
+      : expectedMouthY
   const strokeHalf = subjectW <= 20 ? 1 : 2
   for (let dx = -strokeHalf; dx <= strokeHalf; dx += 1) {
     const x = centerX + dx

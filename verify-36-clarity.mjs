@@ -7,6 +7,7 @@ import {
   FAR_DECORATION_AI_SVG,
   FRAGILE_AI_SVG,
   MISSING_FEATURES_AI_SVG,
+  MUTED_FEATURES_AI_SVG,
   OUT_DIR,
   PASTEL_LOW_CONTRAST_AI_SVG,
   REF_SVG,
@@ -436,6 +437,7 @@ async function main() {
     { label: 'small-offcenter', svg: SMALL_OFFCENTER_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-small-offcenter.png') },
     { label: 'far-decoration', svg: FAR_DECORATION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-far-decoration.png') },
     { label: 'pastel-low-contrast', svg: PASTEL_LOW_CONTRAST_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-pastel-low-contrast.png') },
+    { label: 'muted-features', svg: MUTED_FEATURES_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-muted-features.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
     { label: 'detached-body', svg: DETACHED_BODY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-detached-body.png') },
@@ -512,6 +514,14 @@ async function main() {
         && result.eyes.right.height >= 2
         && result.eyeCore.left.readable
         && result.eyeCore.right.readable
+        && (
+          testCase.label !== 'muted-features'
+          || (
+            result.eyeCore.left.local.count >= 8
+            && result.eyeCore.right.local.count >= 8
+            && result.bestMouthRun >= 5
+          )
+        )
         && result.mouthCenter.count >= 4
         && result.mouthCenter.width >= 3
         && result.bestMouthRun >= 3

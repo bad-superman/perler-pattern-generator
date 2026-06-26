@@ -117,6 +117,21 @@ export const PASTEL_LOW_CONTRAST_AI_SVG = `
   <ellipse cx="704" cy="544" rx="36" ry="22" fill="#ffabc6"/>
 </svg>`
 
+export const MUTED_FEATURES_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <rect x="360" y="658" width="304" height="252" rx="86" fill="#ff9bd8" stroke="#2a1a24" stroke-width="22"/>
+  <ellipse cx="512" cy="454" rx="356" ry="358" fill="#9c73ff" stroke="#2a1a24" stroke-width="24"/>
+  <ellipse cx="512" cy="486" rx="286" ry="312" fill="#ffd7bf" stroke="#2a1a24" stroke-width="18"/>
+  <path d="M198 342 Q512 88 826 342 L784 410 Q512 316 240 410 Z" fill="#b77cff" stroke="#2a1a24" stroke-width="16"/>
+  <path d="M360 462 Q392 444 424 462" fill="none" stroke="#9a777d" stroke-width="8" stroke-linecap="round"/>
+  <path d="M600 462 Q632 444 664 462" fill="none" stroke="#9a777d" stroke-width="8" stroke-linecap="round"/>
+  <path d="M482 558 Q512 582 542 558" fill="none" stroke="#9a777d" stroke-width="6" stroke-linecap="round"/>
+  <ellipse cx="322" cy="542" rx="36" ry="22" fill="#ff93b9"/>
+  <ellipse cx="702" cy="542" rx="36" ry="22" fill="#ff93b9"/>
+  <path d="M420 684 L604 684" stroke="#8e6f87" stroke-width="7" stroke-linecap="round"/>
+</svg>`
+
 export const ANIMAL_AI_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#fffaf1"/>
