@@ -3,6 +3,7 @@ import { chromium } from 'playwright'
 import {
   AI_SVG,
   ANIMAL_AI_SVG,
+  DETACHED_BODY_AI_SVG,
   FRAGILE_AI_SVG,
   MISSING_FEATURES_AI_SVG,
   OUT_DIR,
@@ -435,6 +436,7 @@ async function main() {
     { label: 'pastel-low-contrast', svg: PASTEL_LOW_CONTRAST_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-pastel-low-contrast.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
+    { label: 'detached-body', svg: DETACHED_BODY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-detached-body.png') },
   ]
   const devServer = await startDevServerIfNeeded()
   const errors = []

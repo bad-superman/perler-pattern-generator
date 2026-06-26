@@ -170,6 +170,22 @@ export const TEXTURED_REALISTIC_AI_SVG = `
   </g>
 </svg>`
 
+export const DETACHED_BODY_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <rect x="344" y="820" width="336" height="128" rx="56" fill="#42d9ff" stroke="#171118" stroke-width="24"/>
+  <ellipse cx="512" cy="430" rx="342" ry="330" fill="#ff65c8" stroke="#171118" stroke-width="30"/>
+  <ellipse cx="512" cy="462" rx="270" ry="292" fill="#ffd5bd" stroke="#171118" stroke-width="22"/>
+  <path d="M210 350 Q512 95 814 350 L776 414 Q512 300 248 414 Z" fill="#8e58ff" stroke="#171118" stroke-width="18"/>
+  <ellipse cx="392" cy="444" rx="30" ry="40" fill="#151015"/>
+  <ellipse cx="632" cy="444" rx="30" ry="40" fill="#151015"/>
+  <ellipse cx="402" cy="430" rx="8" ry="10" fill="#ffffff"/>
+  <ellipse cx="642" cy="430" rx="8" ry="10" fill="#ffffff"/>
+  <path d="M470 548 Q512 582 554 548" fill="none" stroke="#171118" stroke-width="11" stroke-linecap="round"/>
+  <ellipse cx="326" cy="536" rx="34" ry="22" fill="#ff85ad"/>
+  <ellipse cx="698" cy="536" rx="34" ry="22" fill="#ff85ad"/>
+</svg>`
+
 export function writeFixture(name, content) {
   fs.mkdirSync(OUT_DIR, { recursive: true })
   const filePath = path.join(OUT_DIR, name)
