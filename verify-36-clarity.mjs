@@ -230,14 +230,18 @@ async function analyzePattern(page) {
     const rows = sizeMatch ? Number(sizeMatch[2]) : 0
     const active = []
     const dark = []
+    const vivid = []
     const colorCounts = new Map()
 
     cells.forEach((cell, index) => {
       const color = parseColor(getComputedStyle(cell).backgroundColor)
       const colorKey = color.join(',')
       colorCounts.set(colorKey, (colorCounts.get(colorKey) ?? 0) + 1)
-      active[index] = luma(color) < 248
-      dark[index] = active[index] && luma(color) <= 92
+      const colorLuma = luma(color)
+      const chroma = Math.max(...color) - Math.min(...color)
+      active[index] = colorLuma < 248
+      dark[index] = active[index] && colorLuma <= 92
+      vivid[index] = active[index] && chroma >= 44 && colorLuma >= 45 && colorLuma <= 245
     })
 
     const idx = (x, y) => y * cols + x
@@ -257,6 +261,9 @@ async function analyzePattern(page) {
 
     const subjectW = maxX - minX + 1
     const subjectH = maxY - minY + 1
+    const activeCount = active.filter(Boolean).length
+    const darkCount = dark.filter(Boolean).length
+    const vividCount = vivid.filter(Boolean).length
     const centerX = Math.round((minX + maxX) / 2)
 
     function windowStats(left, top, right, bottom) {
@@ -433,6 +440,13 @@ async function analyzePattern(page) {
       cellCount: cells.length,
       legendCount: document.querySelectorAll('.legend-item').length,
       bounds: { minX, minY, maxX, maxY, subjectW, subjectH },
+      colorBalance: {
+        activeCount,
+        darkCount,
+        vividCount,
+        darkRatio: activeCount ? darkCount / activeCount : 0,
+        vividRatio: activeCount ? vividCount / activeCount : 0,
+      },
       colorSignature: [...colorCounts.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8)
@@ -509,6 +523,8 @@ async function main() {
         && result.summary.includes('36×36')
         && result.cellCount === 1296
         && result.legendCount <= 7
+        && result.colorBalance.darkRatio <= 0.78
+        && result.colorBalance.vividRatio >= (testCase.label === 'pastel-low-contrast' ? 0.2 : 0.055)
         && result.eyes.left.count >= 4
         && result.eyes.left.width >= 2
         && result.eyes.left.height >= 2

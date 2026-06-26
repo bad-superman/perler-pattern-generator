@@ -48,6 +48,10 @@ const QUICK_GRID_SIZES = [32, 36, 48, 64, 96] as const
 const CRAFT_DARK_LUMA_THRESHOLD = 82
 const CRAFT_FEATURE_LUMA_THRESHOLD = 96
 const CRAFT_36_FEATURE_LUMA_THRESHOLD = 118
+const CRAFT_LINE_CHROMA_THRESHOLD = 48
+const CRAFT_COLORED_DARK_LINE_LUMA_THRESHOLD = 34
+const CRAFT_COLORED_DARK_MIN_CHROMA = 52
+const CRAFT_COLORED_DARK_MIN_SATURATION = 0.34
 const CRAFT_BACKGROUND_DISTANCE_THRESHOLD = 34
 const CRAFT_BACKGROUND_SOFT_DISTANCE_THRESHOLD = 52
 const CRAFT_DETAIL_MIN_COVERAGE = 0.08
@@ -101,12 +105,69 @@ function getRgbLuma(color: RgbColor) {
   return color.r * 0.299 + color.g * 0.587 + color.b * 0.114
 }
 
+function getRgbChroma(color: RgbColor) {
+  return Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)
+}
+
+function isColoredDarkSource(color: RgbColor, luma = getRgbLuma(color)) {
+  const hsl = rgbToHsl(color)
+  return luma <= CRAFT_DARK_LUMA_THRESHOLD
+    && luma > CRAFT_COLORED_DARK_LINE_LUMA_THRESHOLD
+    && getRgbChroma(color) >= CRAFT_COLORED_DARK_MIN_CHROMA
+    && hsl.s >= CRAFT_COLORED_DARK_MIN_SATURATION
+}
+
+function isCraftLineLikeDark(color: RgbColor, luma = getRgbLuma(color), featureLumaThreshold = CRAFT_FEATURE_LUMA_THRESHOLD) {
+  const chroma = getRgbChroma(color)
+  return luma <= CRAFT_COLORED_DARK_LINE_LUMA_THRESHOLD
+    || (luma <= featureLumaThreshold && chroma <= CRAFT_LINE_CHROMA_THRESHOLD)
+}
+
+function isVividSubjectSourceColor(color: RgbColor) {
+  const luma = getRgbLuma(color)
+  const hsl = rgbToHsl(color)
+  return !isCraftLineLikeDark(color, luma, CRAFT_36_FEATURE_LUMA_THRESHOLD)
+    && hsl.s >= 0.34
+    && getRgbChroma(color) >= 48
+    && luma >= 35
+    && luma <= 245
+}
+
+function isFeatureDarkColor(hex: string) {
+  const color = hexToRgb(hex)
+  const luma = getRgbLuma(color)
+  if (luma > CRAFT_DARK_LUMA_THRESHOLD) return false
+  const hsl = rgbToHsl(color)
+  return luma <= 30 || getRgbChroma(color) <= CRAFT_LINE_CHROMA_THRESHOLD || hsl.s <= 0.32
+}
+
 function getPaletteVividScore(entry: BeadPaletteEntry) {
   const hsl = rgbToHsl(hexToRgb(entry[2]))
   const luma = getColorLuma(entry[2])
-  if (luma <= CRAFT_DARK_LUMA_THRESHOLD) return 0
-  const usefulLightness = 1 - Math.abs(hsl.l - 0.58)
-  return clamp(hsl.s * 0.75 + usefulLightness * 0.25, 0, 1)
+  if (luma <= CRAFT_DARK_LUMA_THRESHOLD && !isColoredDarkSource(hexToRgb(entry[2]), luma)) return 0
+  const targetLightness = luma <= CRAFT_DARK_LUMA_THRESHOLD ? 0.42 : 0.58
+  const usefulLightness = 1 - Math.abs(hsl.l - targetLightness)
+  return clamp(hsl.s * 0.78 + usefulLightness * 0.22, 0, 1)
+}
+
+function getPaletteHueBucket(entry: BeadPaletteEntry) {
+  const hsl = rgbToHsl(hexToRgb(entry[2]))
+  return Math.floor(hsl.h * 12)
+}
+
+function isVividSubjectHex(hex: string) {
+  if (isFeatureDarkColor(hex)) return false
+  const color = hexToRgb(hex)
+  const luma = getRgbLuma(color)
+  const hsl = rgbToHsl(color)
+  return hsl.s >= 0.34
+    && getRgbChroma(color) >= 48
+    && luma >= 35
+    && luma <= 245
+}
+
+function isVividSubjectPaletteColor(entry: BeadPaletteEntry) {
+  return isVividSubjectHex(entry[2])
 }
 
 function findFallbackDarkPaletteIndex(beadPalette: readonly BeadPaletteEntry[]) {
@@ -114,7 +175,7 @@ function findFallbackDarkPaletteIndex(beadPalette: readonly BeadPaletteEntry[]) 
   let bestScore = Number.POSITIVE_INFINITY
   beadPalette.forEach((entry, index) => {
     const luma = getColorLuma(entry[2])
-    if (luma > CRAFT_DARK_LUMA_THRESHOLD) return
+    if (!isFeatureDarkColor(entry[2])) return
     const hsl = rgbToHsl(hexToRgb(entry[2]))
     const neutralPenalty = hsl.s * 12
     const tooBlackPenalty = luma < 16 ? 8 : 0
@@ -183,7 +244,7 @@ function hslToRgb({ h, s, l }: HslColor): RgbColor {
 }
 
 function isDarkPaletteColor(entry: BeadPaletteEntry) {
-  return getColorLuma(entry[2]) <= CRAFT_DARK_LUMA_THRESHOLD
+  return isFeatureDarkColor(entry[2])
 }
 
 function getCraftMaxColors(longSide: number, userMaxColors: number) {
@@ -345,8 +406,9 @@ function drawImageToSampledGrid(
           b += sourceB
           a += alpha
           visibleCount += 1
-          const luma = sourceR * 0.299 + sourceG * 0.587 + sourceB * 0.114
-          if (samplingMode === 'feature' && luma <= featureLumaThreshold) {
+          const sourceColor = { r: sourceR, g: sourceG, b: sourceB }
+          const luma = getRgbLuma(sourceColor)
+          if (samplingMode === 'feature' && isCraftLineLikeDark(sourceColor, luma, featureLumaThreshold)) {
             darkR += sourceR
             darkG += sourceG
             darkB += sourceB
@@ -374,6 +436,31 @@ function drawImageToSampledGrid(
         samplingMode === 'feature'
         && darkCount / totalSamples >= featureMinCoverage
       ) {
+        const dominant = buckets.size ? [...buckets.values()].sort((left, right) => right.count - left.count)[0] : null
+        const dominantColor = dominant
+          ? {
+            r: Math.round(dominant.r / dominant.count),
+            g: Math.round(dominant.g / dominant.count),
+            b: Math.round(dominant.b / dominant.count),
+          }
+          : null
+        const darkCoverage = darkCount / totalSamples
+        const dominantCoverage = dominant ? dominant.count / totalSamples : 0
+        const shouldPreserveVividDominant = dominantColor
+          && isVividSubjectSourceColor(dominantColor)
+          && dominantCoverage >= (longSide <= 40 ? 0.2 : 0.28)
+          && darkCoverage < (longSide <= 40 ? 0.2 : 0.16)
+
+        if (shouldPreserveVividDominant && dominantColor && dominant) {
+          averaged.data[targetOffset] = dominantColor.r
+          averaged.data[targetOffset + 1] = dominantColor.g
+          averaged.data[targetOffset + 2] = dominantColor.b
+          averaged.data[targetOffset + 3] = visibleCount / totalSamples >= detailMinCoverage
+            ? 255
+            : Math.round(dominant.a / totalSamples)
+          continue
+        }
+
         averaged.data[targetOffset] = Math.round(darkR / darkCount)
         averaged.data[targetOffset + 1] = Math.round(darkG / darkCount)
         averaged.data[targetOffset + 2] = Math.round(darkB / darkCount)
@@ -517,6 +604,19 @@ function boostCraftSourceColors(imageData: ImageData, longSide: number) {
     const chroma = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)
 
     if (luma <= CRAFT_DARK_LUMA_THRESHOLD) {
+      if (tinyGrid && isColoredDarkSource(color, luma)) {
+        const vividDark = hslToRgb({
+          h: hsl.h,
+          s: clamp(hsl.s * 1.32 + 0.08, 0.54, 0.98),
+          l: clamp(Math.max(hsl.l * 1.08 + 0.055, 0.3), 0.26, 0.62),
+        })
+        data[offset] = vividDark.r
+        data[offset + 1] = vividDark.g
+        data[offset + 2] = vividDark.b
+        data[offset + 3] = Math.max(data[offset + 3], 220)
+        continue
+      }
+
       const darkened = hslToRgb({
         h: hsl.h,
         s: clamp(hsl.s * 1.08 + 0.04, 0, 0.92),
@@ -583,6 +683,64 @@ function getPaletteEdgeScores(imageData: ImageData, paletteIndexes: number[], pa
   return edgeScores
 }
 
+function ensureTinyGridVividPaletteColors(
+  selected: number[],
+  frequency: Map<number, number>,
+  edgeScores: Map<number, number>,
+  beadPalette: readonly BeadPaletteEntry[],
+  maxColorsForMode: number,
+  totalCells: number,
+) {
+  const result = [...selected]
+  const minCount = Math.max(6, Math.round(totalCells * 0.012))
+  const vividLimit = maxColorsForMode <= 6 ? 2 : 3
+  const getDarkCount = () => result.filter((index) => isDarkPaletteColor(beadPalette[index])).length
+  const getVividCount = () => result.filter((index) => isVividSubjectPaletteColor(beadPalette[index])).length
+  const selectedFamilies = () => new Set(result
+    .filter((index) => isVividSubjectPaletteColor(beadPalette[index]))
+    .map((index) => getPaletteHueBucket(beadPalette[index])))
+  const getScore = (index: number) => (
+    (frequency.get(index) ?? 0)
+    + (edgeScores.get(index) ?? 0) * 1.2
+    + getPaletteVividScore(beadPalette[index]) * Math.min(frequency.get(index) ?? 0, 90) * 0.55
+  )
+  const candidates = [...frequency.keys()]
+    .filter((index) => isVividSubjectPaletteColor(beadPalette[index]))
+    .filter((index) => (frequency.get(index) ?? 0) >= minCount)
+    .sort((a, b) => getScore(b) - getScore(a))
+
+  candidates.forEach((candidate) => {
+    if (result.includes(candidate)) return
+    if (getVividCount() >= vividLimit) return
+    if (selectedFamilies().has(getPaletteHueBucket(beadPalette[candidate]))) return
+
+    const candidateScore = getScore(candidate)
+    let replaceAt = result.findIndex((index) => (
+      isDarkPaletteColor(beadPalette[index])
+      && getDarkCount() > 1
+      && (frequency.get(index) ?? 0) < candidateScore * 0.95
+    ))
+    if (replaceAt < 0) {
+      replaceAt = result.findIndex((index) => (
+        !isDarkPaletteColor(beadPalette[index])
+        && !isVividSubjectPaletteColor(beadPalette[index])
+        && (frequency.get(index) ?? 0) < candidateScore * 0.75
+      ))
+    }
+    if (replaceAt < 0) {
+      const replaceable = result
+        .map((index, position) => ({ index, position, score: getScore(index) }))
+        .filter((item) => !isDarkPaletteColor(beadPalette[item.index]) || getDarkCount() > 1)
+        .sort((a, b) => a.score - b.score)[0]
+      replaceAt = replaceable?.position ?? -1
+    }
+
+    if (replaceAt >= 0) result[replaceAt] = candidate
+  })
+
+  return [...new Set(result)].slice(0, maxColorsForMode)
+}
+
 function selectPaletteIndexes(
   imageData: ImageData,
   beadPalette: readonly BeadPaletteEntry[],
@@ -616,7 +774,7 @@ function selectPaletteIndexes(
 
   const edgeScores = getPaletteEdgeScores(imageData, paletteIndexes, beadPalette)
   const tinyGrid = longSide <= 40
-  const selected = [...frequency.entries()]
+  let selected = [...frequency.entries()]
     .sort((a, b) => {
       const getScore = ([index, count]: [number, number]) => (
         count
@@ -637,6 +795,21 @@ function selectPaletteIndexes(
       .sort((a, b) => (frequency.get(b) ?? 0) - (frequency.get(a) ?? 0))[0]
     const fallbackDark = darkestFrequent ?? (tinyGrid ? findFallbackDarkPaletteIndex(beadPalette) : -1)
     if (fallbackDark >= 0) selected[selected.length - 1] = fallbackDark
+  }
+
+  if (tinyGrid) {
+    selected = ensureTinyGridVividPaletteColors(
+      selected,
+      frequency,
+      edgeScores,
+      beadPalette,
+      maxColorsForMode,
+      width * height,
+    )
+    if (!selected.some((index) => isDarkPaletteColor(beadPalette[index]))) {
+      const fallbackDark = findFallbackDarkPaletteIndex(beadPalette)
+      if (fallbackDark >= 0) selected[selected.length - 1] = fallbackDark
+    }
   }
 
   return [...new Set(selected)]
@@ -709,14 +882,16 @@ function getDominantIndex(indexes: number[]) {
 }
 
 function getCraftDarkIndex(indexes: number[], selectedPalette: PaletteColor[]) {
-  const darkIndexes = indexes.filter((index) => (
-    index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
-  ))
+  const darkIndexes = indexes.filter((index) => isDarkPaletteIndex(index, selectedPalette))
   return getDominantIndex(darkIndexes)
 }
 
 function isDarkPaletteIndex(index: number, selectedPalette: PaletteColor[]) {
-  return index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  return index >= 0 && isFeatureDarkColor(selectedPalette[index]?.hex ?? '#ffffff')
+}
+
+function isVividSubjectPaletteIndex(index: number, selectedPalette: PaletteColor[]) {
+  return index >= 0 && isVividSubjectHex(selectedPalette[index]?.hex ?? '#ffffff')
 }
 
 function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
@@ -724,7 +899,7 @@ function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
   const cols = grid[0]?.length ?? 0
   if (!rows || !cols) return grid
 
-  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const isDarkIndex = (index: number) => isDarkPaletteIndex(index, selectedPalette)
   const next = grid.map((row) => row.map((cell) => ({ ...cell })))
 
   for (let y = 0; y < rows; y += 1) {
@@ -785,13 +960,14 @@ function connectCraftDarkDetails(grid: BeadCell[][], selectedPalette: PaletteCol
   const cols = grid[0]?.length ?? 0
   if (!rows || !cols) return grid
 
-  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const isDarkIndex = (index: number) => isDarkPaletteIndex(index, selectedPalette)
   const next = cloneGrid(grid)
 
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < cols; x += 1) {
       const currentIndex = grid[y][x].colorIndex
       if (isDarkIndex(currentIndex)) continue
+      if (isVividSubjectPaletteIndex(currentIndex, selectedPalette)) continue
 
       const left = grid[y]?.[x - 1]?.colorIndex ?? -1
       const right = grid[y]?.[x + 1]?.colorIndex ?? -1
@@ -817,7 +993,7 @@ function reinforceTinyDarkFeatures(grid: BeadCell[][], selectedPalette: PaletteC
   const cols = grid[0]?.length ?? 0
   if (!rows || !cols || longSide > 64) return grid
 
-  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const isDarkIndex = (index: number) => isDarkPaletteIndex(index, selectedPalette)
   const visited = new Uint8Array(rows * cols)
   const next = cloneGrid(grid)
 
@@ -953,7 +1129,7 @@ function findBestDarkPaletteIndex(selectedPalette: PaletteColor[]) {
   let bestScore = Number.POSITIVE_INFINITY
   selectedPalette.forEach((color, index) => {
     const luma = getColorLuma(color.hex)
-    if (luma > CRAFT_DARK_LUMA_THRESHOLD) return
+    if (!isFeatureDarkColor(color.hex)) return
     const score = luma - Math.min(color.count, 30) * 0.4
     if (score < bestScore) {
       bestScore = score
@@ -972,7 +1148,7 @@ function findLocalFillIndex(
 ) {
   const neighborIndexes = ALL_DIRECTIONS
     .map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
-    .filter((index) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') > CRAFT_DARK_LUMA_THRESHOLD)
+    .filter((index) => index >= 0 && !isDarkPaletteIndex(index, selectedPalette))
   return getDominantIndex(neighborIndexes) >= 0 ? getDominantIndex(neighborIndexes) : fallbackIndex
 }
 
@@ -1065,6 +1241,7 @@ function bridge36DarkFeatureGaps(grid: BeadCell[][], selectedPalette: PaletteCol
     for (let x = Math.max(1, bounds.minX + 1); x <= Math.min(cols - 2, bounds.maxX - 1); x += 1) {
       const currentIndex = grid[y][x].colorIndex
       if (isDarkPaletteIndex(currentIndex, selectedPalette)) continue
+      if (isVividSubjectPaletteIndex(currentIndex, selectedPalette)) continue
 
       const left = grid[y]?.[x - 1]?.colorIndex ?? -1
       const right = grid[y]?.[x + 1]?.colorIndex ?? -1
@@ -1288,7 +1465,7 @@ function strengthen36FacialFeatures(grid: BeadCell[][], selectedPalette: Palette
   const darkIndex = findBestDarkPaletteIndex(selectedPalette)
   if (darkIndex < 0) return grid
 
-  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const isDarkIndex = (index: number) => isDarkPaletteIndex(index, selectedPalette)
   const next = cloneGrid(grid)
   const visited = new Uint8Array(rows * cols)
   const faceTop = bounds.minY + Math.round((bounds.maxY - bounds.minY + 1) * 0.12)
@@ -1428,7 +1605,7 @@ function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[]
   const mouthYEnd = bounds.minY + Math.round(subjectH * 0.74)
   const mouthXStart = Math.max(bounds.minX + 2, centerX - Math.max(3, Math.round(subjectW * 0.16)))
   const mouthXEnd = Math.min(bounds.maxX - 2, centerX + Math.max(3, Math.round(subjectW * 0.16)))
-  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const isDarkIndex = (index: number) => isDarkPaletteIndex(index, selectedPalette)
 
   let bestY = -1
   let bestDarkCount = 0
@@ -1519,11 +1696,14 @@ function thicken36OuterSilhouette(grid: BeadCell[][], selectedPalette: PaletteCo
       ))
       if (!touchesEmpty) continue
 
+      const currentIndex = grid[y][x].colorIndex
+      if (isDarkPaletteIndex(currentIndex, selectedPalette) || isVividSubjectPaletteIndex(currentIndex, selectedPalette)) continue
+
       const darkNeighborCount = ALL_DIRECTIONS.filter(([dx, dy]) => {
         const index = grid[y + dy]?.[x + dx]?.colorIndex ?? -1
-        return index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+        return isDarkPaletteIndex(index, selectedPalette)
       }).length
-      if (darkNeighborCount >= 1) {
+      if (darkNeighborCount >= 2) {
         placeCellIfUseful(next, selectedPalette, x, y, darkIndex)
       }
     }
