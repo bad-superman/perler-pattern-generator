@@ -115,6 +115,61 @@ export const ANIMAL_AI_SVG = `
   <ellipse cx="719" cy="620" rx="52" ry="34" fill="#ff7aa9"/>
 </svg>`
 
+export const TEXTURED_REALISTIC_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="skinGrad" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f4c3aa"/>
+      <stop offset="0.55" stop-color="#df9d87"/>
+      <stop offset="1" stop-color="#b77869"/>
+    </linearGradient>
+    <radialGradient id="hairGrad" cx="45%" cy="35%" r="65%">
+      <stop offset="0" stop-color="#6a4b40"/>
+      <stop offset="0.55" stop-color="#332521"/>
+      <stop offset="1" stop-color="#151112"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <circle cx="150" cy="150" r="30" fill="#ffe68a" opacity="0.7"/>
+  <circle cx="874" cy="178" r="24" fill="#c7d7ff" opacity="0.7"/>
+  <circle cx="828" cy="846" r="20" fill="#ffc1db" opacity="0.7"/>
+  <rect x="352" y="664" width="320" height="260" rx="76" fill="#7f8ea1" stroke="#21181c" stroke-width="14"/>
+  <path d="M350 718 C430 780 590 778 676 710 L650 920 L370 920 Z" fill="#56677f" opacity="0.75"/>
+  <ellipse cx="512" cy="456" rx="320" ry="342" fill="url(#hairGrad)" stroke="#21181c" stroke-width="18"/>
+  <path d="M245 340 C300 120 680 105 780 348 C676 278 352 270 245 340 Z" fill="#4f392f" stroke="#21181c" stroke-width="12"/>
+  <ellipse cx="512" cy="486" rx="254" ry="292" fill="url(#skinGrad)" stroke="#2a1c1e" stroke-width="12"/>
+  <path d="M282 328 C350 285 406 272 462 282" fill="none" stroke="#1d1617" stroke-width="7" opacity="0.7"/>
+  <path d="M742 330 C674 286 612 276 560 286" fill="none" stroke="#1d1617" stroke-width="7" opacity="0.7"/>
+  <path d="M316 254 C345 384 378 448 350 610" fill="none" stroke="#94716b" stroke-width="5" opacity="0.75"/>
+  <path d="M386 218 C405 390 430 438 414 665" fill="none" stroke="#94716b" stroke-width="5" opacity="0.72"/>
+  <path d="M468 204 C472 356 490 424 484 700" fill="none" stroke="#94716b" stroke-width="5" opacity="0.68"/>
+  <path d="M552 210 C546 360 532 442 548 704" fill="none" stroke="#94716b" stroke-width="5" opacity="0.68"/>
+  <path d="M636 230 C610 380 596 460 632 672" fill="none" stroke="#94716b" stroke-width="5" opacity="0.7"/>
+  <path d="M704 270 C662 388 654 476 690 616" fill="none" stroke="#94716b" stroke-width="5" opacity="0.72"/>
+  <path d="M370 454 Q410 438 448 454" fill="none" stroke="#23171a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M576 454 Q616 438 654 454" fill="none" stroke="#23171a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M512 474 Q496 528 520 552" fill="none" stroke="#a86961" stroke-width="5" stroke-linecap="round"/>
+  <path d="M462 602 Q512 632 564 602" fill="none" stroke="#7d353f" stroke-width="6" stroke-linecap="round"/>
+  <ellipse cx="350" cy="558" rx="34" ry="20" fill="#d9818d" opacity="0.55"/>
+  <ellipse cx="674" cy="558" rx="34" ry="20" fill="#d9818d" opacity="0.55"/>
+  <g fill="#7b5654" opacity="0.55">
+    <circle cx="422" cy="518" r="5"/>
+    <circle cx="438" cy="574" r="4"/>
+    <circle cx="594" cy="526" r="5"/>
+    <circle cx="608" cy="586" r="4"/>
+    <circle cx="486" cy="616" r="3"/>
+    <circle cx="544" cy="620" r="3"/>
+  </g>
+  <g stroke="#8d6b66" stroke-width="4" opacity="0.5" stroke-linecap="round">
+    <path d="M334 500 L382 506"/>
+    <path d="M642 506 L690 500"/>
+    <path d="M378 656 L456 678"/>
+    <path d="M568 678 L646 656"/>
+    <path d="M412 396 L440 386"/>
+    <path d="M584 386 L612 396"/>
+  </g>
+</svg>`
+
 export function writeFixture(name, content) {
   fs.mkdirSync(OUT_DIR, { recursive: true })
   const filePath = path.join(OUT_DIR, name)

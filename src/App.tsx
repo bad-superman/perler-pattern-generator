@@ -894,6 +894,15 @@ function isVividSubjectPaletteIndex(index: number, selectedPalette: PaletteColor
   return index >= 0 && isVividSubjectHex(selectedPalette[index]?.hex ?? '#ffffff')
 }
 
+function getHueDistance(a: number, b: number) {
+  const distance = Math.abs(a - b)
+  return Math.min(distance, 1 - distance)
+}
+
+function colorDistanceManhattan(a: RgbColor, b: RgbColor) {
+  return Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b)
+}
+
 function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
   const rows = grid.length
   const cols = grid[0]?.length ?? 0
@@ -1053,6 +1062,77 @@ function reinforceTinyDarkFeatures(grid: BeadCell[][], selectedPalette: PaletteC
     }
   }
 
+  return next
+}
+
+function shouldMerge36SimilarShade(sourceHex: string, targetHex: string) {
+  if (isFeatureDarkColor(sourceHex) || isFeatureDarkColor(targetHex)) return false
+  const source = hexToRgb(sourceHex)
+  const target = hexToRgb(targetHex)
+  const sourceHsl = rgbToHsl(source)
+  const targetHsl = rgbToHsl(target)
+  const hueDistance = getHueDistance(sourceHsl.h, targetHsl.h)
+  const lumaDistance = Math.abs(getRgbLuma(source) - getRgbLuma(target))
+  const colorDistance = colorDistanceManhattan(source, target)
+
+  return hueDistance <= 0.055
+    && lumaDistance <= 24
+    && colorDistance <= 68
+}
+
+function merge36SimilarMinorShades(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const activeCount = selectedPalette.reduce((total, color) => total + color.count, 0)
+  const maxMinorCount = Math.max(36, Math.round(activeCount * 0.085))
+  const replacements = new Map<number, number>()
+  const candidates = selectedPalette
+    .map((color, index) => ({ color, index }))
+    .filter(({ color, index }) => (
+      color.count > 0
+      && color.count <= maxMinorCount
+      && !isDarkPaletteIndex(index, selectedPalette)
+    ))
+    .sort((a, b) => a.color.count - b.color.count)
+
+  candidates.forEach(({ color, index }) => {
+    const target = selectedPalette
+      .map((targetColor, targetIndex) => ({ color: targetColor, index: targetIndex }))
+      .filter((item) => (
+        item.index !== index
+        && item.color.count > color.count
+        && !isDarkPaletteIndex(item.index, selectedPalette)
+        && shouldMerge36SimilarShade(color.hex, item.color.hex)
+      ))
+      .sort((a, b) => (
+        b.color.count - a.color.count
+        || colorDistanceManhattan(hexToRgb(color.hex), hexToRgb(a.color.hex))
+          - colorDistanceManhattan(hexToRgb(color.hex), hexToRgb(b.color.hex))
+      ))[0]
+    if (target) replacements.set(index, target.index)
+  })
+
+  if (!replacements.size) return grid
+
+  const resolveTarget = (index: number) => {
+    let target = replacements.get(index) ?? index
+    while (replacements.has(target)) target = replacements.get(target) ?? target
+    return target
+  }
+
+  const next = cloneGrid(grid)
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const index = grid[y][x].colorIndex
+      if (!replacements.has(index)) continue
+      next[y][x] = makePaletteCell(resolveTarget(index), selectedPalette)
+    }
+  }
+
+  recountPalette(next, selectedPalette)
   return next
 }
 
@@ -1833,6 +1913,7 @@ function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
   next = ensure36SilhouetteOutline(next, selectedPalette, longSide)
   next = thicken36OuterSilhouette(next, selectedPalette, longSide)
   next = cleanupCraftGrid(next, selectedPalette)
+  next = merge36SimilarMinorShades(next, selectedPalette, longSide)
   next = removeTinyDetachedCraftIslands(next)
   recountPalette(next, selectedPalette)
   return next

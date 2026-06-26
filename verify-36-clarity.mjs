@@ -9,6 +9,7 @@ import {
   PASTEL_LOW_CONTRAST_AI_SVG,
   REF_SVG,
   SMALL_OFFCENTER_AI_SVG,
+  TEXTURED_REALISTIC_AI_SVG,
   parseRgb,
   startDevServerIfNeeded,
   stopDevServer,
@@ -421,6 +422,7 @@ async function main() {
     { label: 'small-offcenter', svg: SMALL_OFFCENTER_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-small-offcenter.png') },
     { label: 'pastel-low-contrast', svg: PASTEL_LOW_CONTRAST_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-pastel-low-contrast.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
+    { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
   ]
   const devServer = await startDevServerIfNeeded()
   const errors = []
@@ -475,6 +477,7 @@ async function main() {
         && result.summary.includes('36×36')
         && result.cellCount === 1296
         && result.legendCount <= 7
+        && (testCase.label !== 'textured-realistic' || result.legendCount <= 5)
         && result.integrity.activeComponents.significantCount <= 1
         && result.integrity.activeComponents.largestRatio >= 0.96
         && result.integrity.holes.count <= 2
