@@ -780,6 +780,33 @@ function boostCraftSourceColors(imageData: ImageData, longSide: number) {
       continue
     }
 
+    if (tinyGrid && chroma < 24 && luma < 242) {
+      const fallbackHue = luma < 128
+        ? 0.74
+        : luma < 176
+          ? 0.56
+          : luma < 214
+            ? 0.93
+            : 0.08
+      const targetLightness = luma < 128
+        ? 0.44
+        : luma < 176
+          ? 0.58
+          : luma < 214
+            ? 0.68
+            : 0.78
+      const colorized = hslToRgb({
+        h: hsl.s >= 0.08 && chroma >= 10 ? hsl.h : fallbackHue,
+        s: clamp(hsl.s * 1.5 + (luma >= 214 ? 0.48 : 0.56), 0.52, 0.92),
+        l: clamp(hsl.l * 0.62 + targetLightness * 0.38, 0.36, 0.84),
+      })
+      data[offset] = colorized.r
+      data[offset + 1] = colorized.g
+      data[offset + 2] = colorized.b
+      data[offset + 3] = Math.max(data[offset + 3], 220)
+      continue
+    }
+
     const boosted = hslToRgb({
       h: hsl.h,
       s: chroma < 16

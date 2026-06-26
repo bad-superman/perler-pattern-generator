@@ -182,6 +182,22 @@ export const MOUTH_CONFUSION_AI_SVG = `
   <ellipse cx="686" cy="548" rx="34" ry="22" fill="#ff90b9"/>
 </svg>`
 
+export const MUTED_GRAY_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#f7f7f4"/>
+  <rect x="352" y="660" width="320" height="248" rx="82" fill="#b5b5b2" stroke="#202020" stroke-width="24"/>
+  <ellipse cx="512" cy="452" rx="342" ry="352" fill="#9d9a9d" stroke="#202020" stroke-width="28"/>
+  <ellipse cx="512" cy="492" rx="278" ry="304" fill="#d8d1c9" stroke="#202020" stroke-width="18"/>
+  <path d="M194 340 Q512 86 830 340 L786 420 Q512 320 238 420 Z" fill="#868386" stroke="#202020" stroke-width="20"/>
+  <ellipse cx="404" cy="474" rx="24" ry="34" fill="#171717"/>
+  <ellipse cx="620" cy="474" rx="24" ry="34" fill="#171717"/>
+  <ellipse cx="414" cy="462" rx="7" ry="9" fill="#ffffff"/>
+  <ellipse cx="630" cy="462" rx="7" ry="9" fill="#ffffff"/>
+  <path d="M484 564 Q512 586 540 564" fill="none" stroke="#202020" stroke-width="9" stroke-linecap="round"/>
+  <ellipse cx="338" cy="548" rx="34" ry="22" fill="#c7bfc2"/>
+  <ellipse cx="686" cy="548" rx="34" ry="22" fill="#c7bfc2"/>
+</svg>`
+
 export const ANIMAL_AI_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#fffaf1"/>

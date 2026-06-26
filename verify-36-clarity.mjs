@@ -10,6 +10,7 @@ import {
   MISSING_FEATURES_AI_SVG,
   MOUTH_CONFUSION_AI_SVG,
   MUTED_FEATURES_AI_SVG,
+  MUTED_GRAY_AI_SVG,
   OUT_DIR,
   PASTEL_LOW_CONTRAST_AI_SVG,
   REF_SVG,
@@ -466,6 +467,7 @@ async function main() {
     { label: 'tiny-nearby-details', svg: TINY_NEARBY_DETAILS_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-tiny-nearby-details.png') },
     { label: 'brow-confusion', svg: BROW_CONFUSION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-brow-confusion.png') },
     { label: 'mouth-confusion', svg: MOUTH_CONFUSION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-mouth-confusion.png') },
+    { label: 'muted-gray', svg: MUTED_GRAY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-muted-gray.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
     { label: 'detached-body', svg: DETACHED_BODY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-detached-body.png') },
@@ -541,6 +543,10 @@ async function main() {
         && result.integrity.outline.vividBoundaryRatio <= 0.72
         && result.colorBalance.darkRatio <= 0.78
         && result.colorBalance.vividRatio >= (testCase.label === 'pastel-low-contrast' ? 0.2 : 0.055)
+        && (
+          testCase.label !== 'muted-gray'
+          || result.colorBalance.vividRatio >= 0.24
+        )
         && result.eyes.left.count >= 4
         && result.eyes.left.width >= 2
         && result.eyes.left.height >= 2
