@@ -388,7 +388,12 @@ function drawImageToSampledGrid(
       let darkG = 0
       let darkB = 0
       let darkA = 0
+      let darkLumaSum = 0
       let darkCount = 0
+      let darkMinSampleX = sampleScale
+      let darkMinSampleY = sampleScale
+      let darkMaxSampleX = -1
+      let darkMaxSampleY = -1
       const buckets = new Map<string, { count: number; r: number; g: number; b: number; a: number }>()
 
       for (let sampleY = 0; sampleY < sampleScale; sampleY += 1) {
@@ -413,7 +418,12 @@ function drawImageToSampledGrid(
             darkG += sourceG
             darkB += sourceB
             darkA += alpha
+            darkLumaSum += luma
             darkCount += 1
+            darkMinSampleX = Math.min(darkMinSampleX, sampleX)
+            darkMinSampleY = Math.min(darkMinSampleY, sampleY)
+            darkMaxSampleX = Math.max(darkMaxSampleX, sampleX)
+            darkMaxSampleY = Math.max(darkMaxSampleY, sampleY)
           }
 
           if (samplingMode === 'dominant' || samplingMode === 'feature') {
@@ -432,10 +442,38 @@ function drawImageToSampledGrid(
       const targetOffset = (y * cols + x) * 4
       if (visibleCount === 0) {
         averaged.data[targetOffset + 3] = 0
-      } else if (
-        samplingMode === 'feature'
-        && darkCount / totalSamples >= featureMinCoverage
-      ) {
+      } else if (samplingMode === 'feature' && darkCount > 0) {
+        const darkCoverage = darkCount / totalSamples
+        const darkSpanX = darkMaxSampleX >= darkMinSampleX ? darkMaxSampleX - darkMinSampleX + 1 : 0
+        const darkSpanY = darkMaxSampleY >= darkMinSampleY ? darkMaxSampleY - darkMinSampleY + 1 : 0
+        const averageDarkLuma = darkLumaSum / darkCount
+        const hasThinLineStructure = longSide <= 40
+          && darkCount >= 2
+          && darkCoverage >= detailMinCoverage * 0.45
+          && averageDarkLuma <= CRAFT_FEATURE_LUMA_THRESHOLD
+          && (
+            darkSpanX >= Math.max(3, Math.round(sampleScale * 0.36))
+            || darkSpanY >= Math.max(3, Math.round(sampleScale * 0.36))
+            || (darkSpanX >= 2 && darkSpanY >= 2 && darkSpanX + darkSpanY >= Math.round(sampleScale * 0.72))
+          )
+        if (darkCoverage < featureMinCoverage && !hasThinLineStructure) {
+          const dominant = buckets.size ? [...buckets.values()].sort((left, right) => right.count - left.count)[0] : null
+          if (dominant) {
+            averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
+            averaged.data[targetOffset + 1] = Math.round(dominant.g / dominant.count)
+            averaged.data[targetOffset + 2] = Math.round(dominant.b / dominant.count)
+            averaged.data[targetOffset + 3] = visibleCount / totalSamples >= detailMinCoverage
+              ? 255
+              : Math.round(dominant.a / totalSamples)
+          } else {
+            averaged.data[targetOffset] = Math.round(r / visibleCount)
+            averaged.data[targetOffset + 1] = Math.round(g / visibleCount)
+            averaged.data[targetOffset + 2] = Math.round(b / visibleCount)
+            averaged.data[targetOffset + 3] = Math.round(a / totalSamples)
+          }
+          continue
+        }
+
         const dominant = buckets.size ? [...buckets.values()].sort((left, right) => right.count - left.count)[0] : null
         const dominantColor = dominant
           ? {
@@ -444,7 +482,6 @@ function drawImageToSampledGrid(
             b: Math.round(dominant.b / dominant.count),
           }
           : null
-        const darkCoverage = darkCount / totalSamples
         const dominantCoverage = dominant ? dominant.count / totalSamples : 0
         const shouldPreserveVividDominant = dominantColor
           && isVividSubjectSourceColor(dominantColor)
