@@ -111,7 +111,7 @@ function canvasToFile(canvas: HTMLCanvasElement, fileName: string, mimeType = 'i
         reject(new Error('无法裁切 AI 图片'))
         return
       }
-      resolve(new File([blob], fileName, { type: mimeType }))
+      resolve(new File([blob], fileName, { type: blob.type || mimeType }))
     }, mimeType)
   })
 }

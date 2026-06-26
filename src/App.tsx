@@ -101,6 +101,32 @@ function getRgbLuma(color: RgbColor) {
   return color.r * 0.299 + color.g * 0.587 + color.b * 0.114
 }
 
+function getPaletteVividScore(entry: BeadPaletteEntry) {
+  const hsl = rgbToHsl(hexToRgb(entry[2]))
+  const luma = getColorLuma(entry[2])
+  if (luma <= CRAFT_DARK_LUMA_THRESHOLD) return 0
+  const usefulLightness = 1 - Math.abs(hsl.l - 0.58)
+  return clamp(hsl.s * 0.75 + usefulLightness * 0.25, 0, 1)
+}
+
+function findFallbackDarkPaletteIndex(beadPalette: readonly BeadPaletteEntry[]) {
+  let bestIndex = -1
+  let bestScore = Number.POSITIVE_INFINITY
+  beadPalette.forEach((entry, index) => {
+    const luma = getColorLuma(entry[2])
+    if (luma > CRAFT_DARK_LUMA_THRESHOLD) return
+    const hsl = rgbToHsl(hexToRgb(entry[2]))
+    const neutralPenalty = hsl.s * 12
+    const tooBlackPenalty = luma < 16 ? 8 : 0
+    const score = luma + neutralPenalty + tooBlackPenalty
+    if (score < bestScore) {
+      bestScore = score
+      bestIndex = index
+    }
+  })
+  return bestIndex
+}
+
 interface HslColor {
   h: number
   s: number
@@ -478,9 +504,10 @@ function removeCraftEdgeBackground(imageData: ImageData) {
   return cleaned
 }
 
-function boostCraftSourceColors(imageData: ImageData) {
+function boostCraftSourceColors(imageData: ImageData, longSide: number) {
   const enhanced = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height)
   const { data } = enhanced
+  const tinyGrid = longSide <= 40
 
   for (let offset = 0; offset < data.length; offset += 4) {
     if (data[offset + 3] < 80) continue
@@ -504,8 +531,14 @@ function boostCraftSourceColors(imageData: ImageData) {
 
     const boosted = hslToRgb({
       h: hsl.h,
-      s: chroma < 16 ? clamp(hsl.s * 1.08, 0, 0.38) : clamp(hsl.s * 1.38 + 0.08, 0.32, 0.95),
-      l: clamp(hsl.l * 1.05 + 0.025, 0.25, 0.88),
+      s: chroma < 16
+        ? clamp(hsl.s * (tinyGrid ? 1.18 : 1.08) + (tinyGrid ? 0.02 : 0), 0, tinyGrid ? 0.48 : 0.38)
+        : clamp(
+          hsl.s * (tinyGrid ? 1.58 : 1.38) + (tinyGrid ? 0.12 : 0.08),
+          tinyGrid ? 0.42 : 0.32,
+          0.98,
+        ),
+      l: clamp(hsl.l * (tinyGrid ? 1.08 : 1.05) + (tinyGrid ? 0.04 : 0.025), 0.25, tinyGrid ? 0.91 : 0.88),
     })
     data[offset] = boosted.r
     data[offset + 1] = boosted.g
@@ -555,6 +588,7 @@ function selectPaletteIndexes(
   beadPalette: readonly BeadPaletteEntry[],
   maxColorsForMode: number,
   quantizeMode: QuantizeMode,
+  longSide: number,
 ) {
   const paletteIndexes: number[] = []
   const frequency = new Map<number, number>()
@@ -581,10 +615,17 @@ function selectPaletteIndexes(
   }
 
   const edgeScores = getPaletteEdgeScores(imageData, paletteIndexes, beadPalette)
+  const tinyGrid = longSide <= 40
   const selected = [...frequency.entries()]
     .sort((a, b) => {
-      const scoreA = a[1] + (edgeScores.get(a[0]) ?? 0) * 1.8 + (isDarkPaletteColor(beadPalette[a[0]]) ? Math.min(a[1], 24) : 0)
-      const scoreB = b[1] + (edgeScores.get(b[0]) ?? 0) * 1.8 + (isDarkPaletteColor(beadPalette[b[0]]) ? Math.min(b[1], 24) : 0)
+      const getScore = ([index, count]: [number, number]) => (
+        count
+        + (edgeScores.get(index) ?? 0) * 1.8
+        + (isDarkPaletteColor(beadPalette[index]) ? Math.min(count, 24) : 0)
+        + (tinyGrid ? getPaletteVividScore(beadPalette[index]) * Math.min(count, 40) * 0.35 : 0)
+      )
+      const scoreA = getScore(a)
+      const scoreB = getScore(b)
       return scoreB - scoreA
     })
     .slice(0, maxColorsForMode)
@@ -594,7 +635,8 @@ function selectPaletteIndexes(
     const darkestFrequent = [...frequency.keys()]
       .filter((index) => isDarkPaletteColor(beadPalette[index]))
       .sort((a, b) => (frequency.get(b) ?? 0) - (frequency.get(a) ?? 0))[0]
-    if (darkestFrequent !== undefined) selected[selected.length - 1] = darkestFrequent
+    const fallbackDark = darkestFrequent ?? (tinyGrid ? findFallbackDarkPaletteIndex(beadPalette) : -1)
+    if (fallbackDark >= 0) selected[selected.length - 1] = fallbackDark
   }
 
   return [...new Set(selected)]
@@ -671,6 +713,10 @@ function getCraftDarkIndex(indexes: number[], selectedPalette: PaletteColor[]) {
     index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
   ))
   return getDominantIndex(darkIndexes)
+}
+
+function isDarkPaletteIndex(index: number, selectedPalette: PaletteColor[]) {
+  return index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
 }
 
 function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
@@ -930,6 +976,17 @@ function findLocalFillIndex(
   return getDominantIndex(neighborIndexes) >= 0 ? getDominantIndex(neighborIndexes) : fallbackIndex
 }
 
+function canPlaceFeatureCell(grid: BeadCell[][], x: number, y: number) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (x < 0 || y < 0 || x >= cols || y >= rows) return false
+  if (grid[y][x].colorIndex >= 0) return true
+  const solidNeighbors = ALL_DIRECTIONS.filter(([dx, dy]) => (
+    (grid[y + dy]?.[x + dx]?.colorIndex ?? -1) >= 0
+  )).length
+  return solidNeighbors >= 4
+}
+
 function placeCellIfUseful(
   grid: BeadCell[][],
   selectedPalette: PaletteColor[],
@@ -943,6 +1000,99 @@ function placeCellIfUseful(
   const currentIndex = grid[y][x].colorIndex
   if (currentIndex === index) return
   grid[y][x] = makePaletteCell(index, selectedPalette)
+}
+
+function placeFeatureCellIfUseful(
+  target: BeadCell[][],
+  source: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  x: number,
+  y: number,
+  index: number,
+) {
+  if (!canPlaceFeatureCell(source, x, y)) return
+  placeCellIfUseful(target, selectedPalette, x, y, index)
+}
+
+function close36SubjectHoles(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const next = cloneGrid(grid)
+  for (let y = Math.max(1, bounds.minY); y <= Math.min(rows - 2, bounds.maxY); y += 1) {
+    for (let x = Math.max(1, bounds.minX); x <= Math.min(cols - 2, bounds.maxX); x += 1) {
+      if (grid[y][x].colorIndex >= 0) continue
+
+      const cardinalIndexes = CARDINAL_DIRECTIONS.map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
+      const allIndexes = ALL_DIRECTIONS.map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
+      const solidCardinal = cardinalIndexes.filter((index) => index >= 0)
+      const solidAll = allIndexes.filter((index) => index >= 0)
+      const left = grid[y]?.[x - 1]?.colorIndex ?? -1
+      const right = grid[y]?.[x + 1]?.colorIndex ?? -1
+      const up = grid[y - 1]?.[x]?.colorIndex ?? -1
+      const down = grid[y + 1]?.[x]?.colorIndex ?? -1
+      const bridgesSubject = (left >= 0 && right >= 0) || (up >= 0 && down >= 0)
+      const fillsTinyHole = solidCardinal.length >= 3 || solidAll.length >= 5
+
+      if (!bridgesSubject && !fillsTinyHole) continue
+      const darkIndex = getCraftDarkIndex(allIndexes, selectedPalette)
+      const fillIndex = darkIndex >= 0 && allIndexes.filter((index) => isDarkPaletteIndex(index, selectedPalette)).length >= 2
+        ? darkIndex
+        : getDominantIndex(solidCardinal.length ? solidCardinal : solidAll)
+      if (fillIndex >= 0) next[y][x] = makePaletteCell(fillIndex, selectedPalette)
+    }
+  }
+
+  return next
+}
+
+function bridge36DarkFeatureGaps(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const next = cloneGrid(grid)
+  const subjectH = bounds.maxY - bounds.minY + 1
+  const featureTop = bounds.minY + Math.round(subjectH * 0.1)
+  const featureBottom = bounds.minY + Math.round(subjectH * 0.76)
+
+  for (let y = Math.max(1, featureTop); y <= Math.min(rows - 2, featureBottom); y += 1) {
+    for (let x = Math.max(1, bounds.minX + 1); x <= Math.min(cols - 2, bounds.maxX - 1); x += 1) {
+      const currentIndex = grid[y][x].colorIndex
+      if (isDarkPaletteIndex(currentIndex, selectedPalette)) continue
+
+      const left = grid[y]?.[x - 1]?.colorIndex ?? -1
+      const right = grid[y]?.[x + 1]?.colorIndex ?? -1
+      const up = grid[y - 1]?.[x]?.colorIndex ?? -1
+      const down = grid[y + 1]?.[x]?.colorIndex ?? -1
+      const upLeft = grid[y - 1]?.[x - 1]?.colorIndex ?? -1
+      const upRight = grid[y - 1]?.[x + 1]?.colorIndex ?? -1
+      const downLeft = grid[y + 1]?.[x - 1]?.colorIndex ?? -1
+      const downRight = grid[y + 1]?.[x + 1]?.colorIndex ?? -1
+      const allIndexes = [left, right, up, down, upLeft, upRight, downLeft, downRight]
+      const darkNeighborCount = allIndexes.filter((index) => isDarkPaletteIndex(index, selectedPalette)).length
+      const bridgesDarkLine = (
+        (isDarkPaletteIndex(left, selectedPalette) && isDarkPaletteIndex(right, selectedPalette))
+        || (isDarkPaletteIndex(up, selectedPalette) && isDarkPaletteIndex(down, selectedPalette))
+        || (isDarkPaletteIndex(upLeft, selectedPalette) && isDarkPaletteIndex(downRight, selectedPalette))
+        || (isDarkPaletteIndex(upRight, selectedPalette) && isDarkPaletteIndex(downLeft, selectedPalette))
+      )
+      const closesDarkCorner = darkNeighborCount >= 3 && allIndexes.filter((index) => index >= 0).length >= 4
+
+      if (!bridgesDarkLine && !closesDarkCorner) continue
+      const currentLuma = currentIndex >= 0 ? getColorLuma(selectedPalette[currentIndex]?.hex ?? '#ffffff') : 255
+      if (currentLuma > 238 && darkNeighborCount < 4) continue
+      const fillIndex = getCraftDarkIndex(allIndexes, selectedPalette)
+      placeFeatureCellIfUseful(next, grid, selectedPalette, x, y, fillIndex)
+    }
+  }
+
+  return next
 }
 
 function normalizeTinyDarkFeature(
@@ -993,6 +1143,139 @@ function normalizeTinyDarkFeature(
 
   if (centerX <= 1 || centerY <= 1 || centerX >= cols - 2 || centerY >= rows - 2) return
   placeCellIfUseful(grid, selectedPalette, centerX, centerY, darkIndex)
+}
+
+function getDarkComponentsInRegion(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const visited = new Uint8Array(rows * cols)
+  const components: Array<{
+    cells: Array<[number, number]>
+    minX: number
+    minY: number
+    maxX: number
+    maxY: number
+    centerX: number
+    centerY: number
+  }> = []
+
+  for (let y = Math.max(0, top); y <= Math.min(rows - 1, bottom); y += 1) {
+    for (let x = Math.max(0, left); x <= Math.min(cols - 1, right); x += 1) {
+      const startKey = y * cols + x
+      if (visited[startKey] || !isDarkPaletteIndex(grid[y][x].colorIndex, selectedPalette)) continue
+
+      const cells: Array<[number, number]> = []
+      const queue: Array<[number, number]> = [[x, y]]
+      let minX = x
+      let minY = y
+      let maxX = x
+      let maxY = y
+      visited[startKey] = 1
+
+      for (let head = 0; head < queue.length; head += 1) {
+        const [cx, cy] = queue[head]
+        cells.push([cx, cy])
+        minX = Math.min(minX, cx)
+        minY = Math.min(minY, cy)
+        maxX = Math.max(maxX, cx)
+        maxY = Math.max(maxY, cy)
+        ALL_DIRECTIONS.forEach(([dx, dy]) => {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < left || nx > right || ny < top || ny > bottom) return
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+          const key = ny * cols + nx
+          if (visited[key] || !isDarkPaletteIndex(grid[ny][nx].colorIndex, selectedPalette)) return
+          visited[key] = 1
+          queue.push([nx, ny])
+        })
+      }
+
+      components.push({
+        cells,
+        minX,
+        minY,
+        maxX,
+        maxY,
+        centerX: Math.round(cells.reduce((total, [cx]) => total + cx, 0) / cells.length),
+        centerY: Math.round(cells.reduce((total, [, cy]) => total + cy, 0) / cells.length),
+      })
+    }
+  }
+
+  return components
+}
+
+function getDarkWindowStats(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  let count = 0
+  let minX = cols
+  let minY = rows
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = Math.max(0, top); y <= Math.min(rows - 1, bottom); y += 1) {
+    for (let x = Math.max(0, left); x <= Math.min(cols - 1, right); x += 1) {
+      if (!isDarkPaletteIndex(grid[y][x].colorIndex, selectedPalette)) continue
+      count += 1
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+  }
+
+  return {
+    count,
+    width: maxX >= minX ? maxX - minX + 1 : 0,
+    height: maxY >= minY ? maxY - minY + 1 : 0,
+  }
+}
+
+function drawReadable36Eye(
+  target: BeadCell[][],
+  source: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  centerX: number,
+  centerY: number,
+  darkIndex: number,
+  fillIndex: number,
+) {
+  const dots: Array<[number, number, number]> = [
+    [-1, -1, darkIndex],
+    [0, -1, darkIndex],
+    [-2, 0, darkIndex],
+    [-1, 0, darkIndex],
+    [0, 0, darkIndex],
+    [1, 0, darkIndex],
+    [-2, 1, darkIndex],
+    [-1, 1, darkIndex],
+    [0, 1, darkIndex],
+    [1, 1, darkIndex],
+    [-1, 2, darkIndex],
+    [0, 2, darkIndex],
+  ]
+  dots.forEach(([dx, dy, index]) => {
+    placeFeatureCellIfUseful(target, source, selectedPalette, centerX + dx, centerY + dy, index)
+  })
+  if (fillIndex >= 0) {
+    placeFeatureCellIfUseful(target, source, selectedPalette, centerX + 1, centerY - 1, fillIndex)
+  }
 }
 
 function strengthen36FacialFeatures(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
@@ -1048,6 +1331,86 @@ function strengthen36FacialFeatures(grid: BeadCell[][], selectedPalette: Palette
   return next
 }
 
+function ensure36EyePair(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+
+  const subjectW = bounds.maxX - bounds.minX + 1
+  const subjectH = bounds.maxY - bounds.minY + 1
+  const centerX = Math.round((bounds.minX + bounds.maxX) / 2)
+  const eyeTop = bounds.minY + Math.round(subjectH * 0.2)
+  const eyeBottom = bounds.minY + Math.round(subjectH * 0.52)
+  const leftWindow = {
+    left: Math.max(bounds.minX + 2, centerX - Math.round(subjectW * 0.38)),
+    right: Math.max(bounds.minX + 3, centerX - Math.round(subjectW * 0.05)),
+  }
+  const rightWindow = {
+    left: Math.min(bounds.maxX - 3, centerX + Math.round(subjectW * 0.05)),
+    right: Math.min(bounds.maxX - 2, centerX + Math.round(subjectW * 0.38)),
+  }
+
+  const components = getDarkComponentsInRegion(grid, selectedPalette, bounds.minX, eyeTop, bounds.maxX, eyeBottom)
+  const chooseEye = (left: number, right: number) => components
+    .filter((component) => component.centerX >= left && component.centerX <= right)
+    .sort((a, b) => {
+      const scoreComponent = (component: typeof components[number]) => {
+        const width = component.maxX - component.minX + 1
+        const height = component.maxY - component.minY + 1
+        const touchesSubjectSide = component.minX <= bounds.minX + 1 || component.maxX >= bounds.maxX - 1
+        const tooLargeForEye = width > Math.max(6, Math.round(subjectW * 0.26))
+          || height > Math.max(7, Math.round(subjectH * 0.25))
+          || component.cells.length > 22
+        const distancePenalty = Math.abs(component.centerY - expectedEyeY) * 1.4
+        return component.cells.length - distancePenalty - (touchesSubjectSide ? 18 : 0) - (tooLargeForEye ? 28 : 0)
+      }
+      return scoreComponent(b) - scoreComponent(a)
+    })[0]
+
+  const next = cloneGrid(grid)
+  const expectedEyeY = bounds.minY + Math.round(subjectH * 0.43)
+  const expectedEyeOffset = Math.max(4, Math.round(subjectW * 0.21))
+  const pickEyeAnchor = (
+    component: ReturnType<typeof chooseEye> | undefined,
+    fallbackX: number,
+    left: number,
+    right: number,
+  ) => {
+    if (!component) return { centerX: clamp(fallbackX, left, right), centerY: expectedEyeY }
+    const width = component.maxX - component.minX + 1
+    const height = component.maxY - component.minY + 1
+    const touchesSubjectSide = component.minX <= bounds.minX + 1 || component.maxX >= bounds.maxX - 1
+    const tooLargeForEye = width > Math.max(6, Math.round(subjectW * 0.26))
+      || height > Math.max(7, Math.round(subjectH * 0.25))
+      || component.cells.length > 22
+    if (touchesSubjectSide || tooLargeForEye) return { centerX: clamp(fallbackX, left, right), centerY: expectedEyeY }
+    return { centerX: component.centerX, centerY: component.centerY }
+  }
+
+  const leftEyeComponent = chooseEye(leftWindow.left, leftWindow.right)
+  const rightEyeComponent = chooseEye(rightWindow.left, rightWindow.right)
+  const eyes = [
+    pickEyeAnchor(leftEyeComponent, centerX - expectedEyeOffset, leftWindow.left, leftWindow.right),
+    pickEyeAnchor(rightEyeComponent, centerX + expectedEyeOffset, rightWindow.left, rightWindow.right),
+  ]
+
+  eyes.forEach((eye) => {
+    const stats = getDarkWindowStats(grid, selectedPalette, eye.centerX - 2, eye.centerY - 2, eye.centerX + 2, eye.centerY + 3)
+    const compactStats = getDarkWindowStats(grid, selectedPalette, eye.centerX - 1, eye.centerY - 1, eye.centerX + 1, eye.centerY + 2)
+    const needsReadableEye = stats.count < 6 || stats.width < 3 || stats.height < 3 || compactStats.count < 4
+    if (!needsReadableEye) return
+    const fillIndex = findLocalFillIndex(grid, selectedPalette, eye.centerX, eye.centerY, -1)
+    drawReadable36Eye(next, grid, selectedPalette, eye.centerX, eye.centerY, darkIndex, fillIndex)
+  })
+
+  return next
+}
+
 function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
   if (longSide > 40) return grid
   const rows = grid.length
@@ -1061,8 +1424,8 @@ function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[]
   const subjectW = bounds.maxX - bounds.minX + 1
   const subjectH = bounds.maxY - bounds.minY + 1
   const centerX = Math.round((bounds.minX + bounds.maxX) / 2)
-  const mouthYStart = bounds.minY + Math.round(subjectH * 0.38)
-  const mouthYEnd = bounds.minY + Math.round(subjectH * 0.68)
+  const mouthYStart = bounds.minY + Math.round(subjectH * 0.5)
+  const mouthYEnd = bounds.minY + Math.round(subjectH * 0.74)
   const mouthXStart = Math.max(bounds.minX + 2, centerX - Math.max(3, Math.round(subjectW * 0.16)))
   const mouthXEnd = Math.min(bounds.maxX - 2, centerX + Math.max(3, Math.round(subjectW * 0.16)))
   const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
@@ -1080,17 +1443,61 @@ function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[]
     }
   }
 
-  if (bestDarkCount >= 3) return grid
+  const expectedMouthY = bounds.minY + Math.round(subjectH * 0.6)
+  const centerStats = getDarkWindowStats(
+    grid,
+    selectedPalette,
+    centerX - Math.max(2, Math.round(subjectW * 0.12)),
+    expectedMouthY - 2,
+    centerX + Math.max(2, Math.round(subjectW * 0.12)),
+    expectedMouthY + 2,
+  )
+
+  if (bestDarkCount >= 3 && centerStats.count >= 2) return grid
 
   const next = cloneGrid(grid)
-  const mouthY = bestY >= 0 ? bestY : bounds.minY + Math.round(subjectH * 0.52)
+  const mouthY = bestDarkCount >= 2 && bestY >= 0 ? bestY : expectedMouthY
   const strokeHalf = subjectW <= 20 ? 1 : 2
   for (let dx = -strokeHalf; dx <= strokeHalf; dx += 1) {
     const x = centerX + dx
-    const current = grid[mouthY]?.[x]?.colorIndex ?? -1
-    if (current < 0) continue
-    placeCellIfUseful(next, selectedPalette, x, mouthY, darkIndex)
+    placeFeatureCellIfUseful(next, grid, selectedPalette, x, mouthY, darkIndex)
   }
+  return next
+}
+
+function smooth36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+
+  const subjectW = bounds.maxX - bounds.minX + 1
+  const subjectH = bounds.maxY - bounds.minY + 1
+  const centerX = Math.round((bounds.minX + bounds.maxX) / 2)
+  const mouthTop = bounds.minY + Math.round(subjectH * 0.42)
+  const mouthBottom = bounds.minY + Math.round(subjectH * 0.72)
+  const mouthLeft = Math.max(bounds.minX + 2, centerX - Math.max(3, Math.round(subjectW * 0.2)))
+  const mouthRight = Math.min(bounds.maxX - 2, centerX + Math.max(3, Math.round(subjectW * 0.2)))
+
+  const next = cloneGrid(grid)
+  for (let y = mouthTop; y <= Math.min(rows - 1, mouthBottom); y += 1) {
+    const darkXs: number[] = []
+    for (let x = mouthLeft; x <= mouthRight; x += 1) {
+      if (isDarkPaletteIndex(grid[y]?.[x]?.colorIndex ?? -1, selectedPalette)) darkXs.push(x)
+    }
+    if (darkXs.length < 2) continue
+    const minX = Math.min(...darkXs)
+    const maxX = Math.max(...darkXs)
+    if (maxX - minX > 6) continue
+    for (let x = minX; x <= maxX; x += 1) {
+      placeFeatureCellIfUseful(next, grid, selectedPalette, x, y, darkIndex)
+    }
+  }
+
   return next
 }
 
@@ -1128,10 +1535,14 @@ function thicken36OuterSilhouette(grid: BeadCell[][], selectedPalette: PaletteCo
 function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
   let next = cleanupCraftGrid(grid, selectedPalette)
   next = closeCraftSubjectGaps(next, selectedPalette)
+  next = close36SubjectHoles(next, selectedPalette, longSide)
   next = connectCraftDarkDetails(next, selectedPalette)
+  next = bridge36DarkFeatureGaps(next, selectedPalette, longSide)
   next = reinforceTinyDarkFeatures(next, selectedPalette, longSide)
   next = strengthen36FacialFeatures(next, selectedPalette, longSide)
+  next = ensure36EyePair(next, selectedPalette, longSide)
   next = ensure36MouthStroke(next, selectedPalette, longSide)
+  next = smooth36MouthStroke(next, selectedPalette, longSide)
   next = thicken36OuterSilhouette(next, selectedPalette, longSide)
   next = cleanupCraftGrid(next, selectedPalette)
   next = removeTinyDetachedCraftIslands(next)
@@ -1451,11 +1862,12 @@ function App() {
       }
 
       const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize, samplingMode)
+      const longSide = Math.max(cols, rows)
       const quantizeImageData = quantizeMode === 'craft'
-        ? boostCraftSourceColors(removeCraftEdgeBackground(imageData))
+        ? boostCraftSourceColors(removeCraftEdgeBackground(imageData), longSide)
         : imageData
-      const maxColorsForMode = quantizeMode === 'craft' ? getCraftMaxColors(Math.max(cols, rows), nextMaxColors) : nextMaxColors
-      const selected = selectPaletteIndexes(quantizeImageData, beadPalette, maxColorsForMode, quantizeMode)
+      const maxColorsForMode = quantizeMode === 'craft' ? getCraftMaxColors(longSide, nextMaxColors) : nextMaxColors
+      const selected = selectPaletteIndexes(quantizeImageData, beadPalette, maxColorsForMode, quantizeMode, longSide)
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
       const selectedPalette = selected.map((paletteIndex, index) => ({
@@ -1468,7 +1880,7 @@ function App() {
 
       const selectedColors = selected.map((index) => beadPalette[index])
       const grid = buildGridFromImageData(quantizeImageData, selectedPalette, selectedColors)
-      const finalGrid = quantizeMode === 'craft' ? polishCraftGrid(grid, selectedPalette, Math.max(cols, rows)) : grid
+      const finalGrid = quantizeMode === 'craft' ? polishCraftGrid(grid, selectedPalette, longSide) : grid
 
       setPalette(selectedPalette.filter((color) => color.count > 0))
       setPattern(finalGrid)
@@ -1511,7 +1923,7 @@ function App() {
         size,
       })
       const framedFile = await cropToReferenceFraming(aiFile, refFile)
-      const croppedFile = await cropSubjectFromImage(framedFile)
+      const croppedFile = await cropSubjectFromImage(framedFile, { square: patternShape === 'square' })
       await generatePattern(croppedFile, gridSize, maxColors, patternShape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
