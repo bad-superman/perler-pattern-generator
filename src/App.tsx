@@ -1678,6 +1678,113 @@ function smooth36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[]
   return next
 }
 
+function getExteriorEmptyMask(grid: BeadCell[][]) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const exterior = new Uint8Array(rows * cols)
+  const queue: Array<[number, number]> = []
+
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= cols || y >= rows) return
+    const key = y * cols + x
+    if (exterior[key] || grid[y][x].colorIndex >= 0) return
+    exterior[key] = 1
+    queue.push([x, y])
+  }
+
+  for (let x = 0; x < cols; x += 1) {
+    enqueue(x, 0)
+    enqueue(x, rows - 1)
+  }
+  for (let y = 0; y < rows; y += 1) {
+    enqueue(0, y)
+    enqueue(cols - 1, y)
+  }
+
+  for (let head = 0; head < queue.length; head += 1) {
+    const [x, y] = queue[head]
+    CARDINAL_DIRECTIONS.forEach(([dx, dy]) => enqueue(x + dx, y + dy))
+  }
+
+  return exterior
+}
+
+function ensure36SilhouetteOutline(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+
+  const exterior = getExteriorEmptyMask(grid)
+  const isExterior = (x: number, y: number) => (
+    x < 0 || y < 0 || x >= cols || y >= rows || exterior[y * cols + x] === 1
+  )
+  const boundaryCells: Array<{
+    x: number
+    y: number
+    index: number
+    activeNeighborCount: number
+    exteriorNeighborCount: number
+  }> = []
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const index = grid[y][x].colorIndex
+      if (index < 0) continue
+      const exteriorNeighborCount = CARDINAL_DIRECTIONS.filter(([dx, dy]) => isExterior(x + dx, y + dy)).length
+      if (!exteriorNeighborCount) continue
+      const activeNeighborCount = CARDINAL_DIRECTIONS.filter(([dx, dy]) => (
+        (grid[y + dy]?.[x + dx]?.colorIndex ?? -1) >= 0
+      )).length
+      boundaryCells.push({ x, y, index, activeNeighborCount, exteriorNeighborCount })
+    }
+  }
+
+  if (boundaryCells.length < 12) return grid
+
+  const darkBoundaryKeys = new Set<string>()
+  boundaryCells.forEach(({ x, y, index }) => {
+    if (isDarkPaletteIndex(index, selectedPalette)) darkBoundaryKeys.add(`${x},${y}`)
+  })
+
+  const boundaryDarkRatio = darkBoundaryKeys.size / boundaryCells.length
+  if (boundaryDarkRatio >= 0.68) return grid
+
+  const urgentOutlineRepair = boundaryDarkRatio < 0.3
+  const nearbyDarkOutlineCount = (x: number, y: number) => {
+    let count = 0
+    for (let dy = -2; dy <= 2; dy += 1) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        if (dx === 0 && dy === 0) continue
+        if (Math.max(Math.abs(dx), Math.abs(dy)) > 2) continue
+        if (darkBoundaryKeys.has(`${x + dx},${y + dy}`)) count += 1
+      }
+    }
+    return count
+  }
+
+  const next = cloneGrid(grid)
+  boundaryCells.forEach(({ x, y, index, activeNeighborCount, exteriorNeighborCount }) => {
+    if (isDarkPaletteIndex(index, selectedPalette)) return
+
+    const nearbyDark = nearbyDarkOutlineCount(x, y)
+    const isCorner = exteriorNeighborCount >= 2
+    const isThinTip = activeNeighborCount <= 1
+    const isVividBoundary = isVividSubjectPaletteIndex(index, selectedPalette)
+
+    if (!urgentOutlineRepair && nearbyDark < (isCorner ? 1 : 2)) return
+    if (isThinTip && nearbyDark < 3 && !urgentOutlineRepair) return
+    if (isVividBoundary && !urgentOutlineRepair && nearbyDark < 3 && !isCorner) return
+
+    placeCellIfUseful(next, selectedPalette, x, y, darkIndex)
+  })
+
+  return next
+}
+
 function thicken36OuterSilhouette(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
   if (longSide > 40) return grid
   const rows = grid.length
@@ -1723,6 +1830,7 @@ function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
   next = ensure36EyePair(next, selectedPalette, longSide)
   next = ensure36MouthStroke(next, selectedPalette, longSide)
   next = smooth36MouthStroke(next, selectedPalette, longSide)
+  next = ensure36SilhouetteOutline(next, selectedPalette, longSide)
   next = thicken36OuterSilhouette(next, selectedPalette, longSide)
   next = cleanupCraftGrid(next, selectedPalette)
   next = removeTinyDetachedCraftIslands(next)

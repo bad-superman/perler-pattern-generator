@@ -237,6 +237,61 @@ async function analyzePattern(page) {
       }
     }
 
+    function outlineStats() {
+      const exterior = new Uint8Array(cols * rows)
+      const queue = []
+      const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+      const enqueue = (x, y) => {
+        if (x < 0 || y < 0 || x >= cols || y >= rows) return
+        const key = idx(x, y)
+        if (exterior[key] || active[key]) return
+        exterior[key] = 1
+        queue.push([x, y])
+      }
+
+      for (let x = 0; x < cols; x += 1) {
+        enqueue(x, 0)
+        enqueue(x, rows - 1)
+      }
+      for (let y = 0; y < rows; y += 1) {
+        enqueue(0, y)
+        enqueue(cols - 1, y)
+      }
+
+      for (let head = 0; head < queue.length; head += 1) {
+        const [x, y] = queue[head]
+        dirs.forEach(([dx, dy]) => enqueue(x + dx, y + dy))
+      }
+
+      const boundary = new Uint8Array(cols * rows)
+      let boundaryCount = 0
+      let darkBoundaryCount = 0
+      let vividBoundaryCount = 0
+      active.forEach((isActive, index) => {
+        if (!isActive) return
+        const x = index % cols
+        const y = Math.floor(index / cols)
+        const touchesExterior = dirs.some(([dx, dy]) => {
+          const nx = x + dx
+          const ny = y + dy
+          return nx < 0 || ny < 0 || nx >= cols || ny >= rows || exterior[idx(nx, ny)] === 1
+        })
+        if (!touchesExterior) return
+        boundary[index] = 1
+        boundaryCount += 1
+        if (dark[index]) darkBoundaryCount += 1
+        if (vivid[index]) vividBoundaryCount += 1
+      })
+
+      return {
+        boundaryCount,
+        darkBoundaryCount,
+        vividBoundaryCount,
+        darkBoundaryRatio: boundaryCount ? darkBoundaryCount / boundaryCount : 0,
+        vividBoundaryRatio: boundaryCount ? vividBoundaryCount / boundaryCount : 0,
+      }
+    }
+
     function eyeStats(left, right, expectedX, expectedY) {
       const local = windowStats(
         Math.max(left, Math.round(expectedX) - 2),
@@ -318,6 +373,7 @@ async function analyzePattern(page) {
     }
     const activeComponents = componentStats(active)
     const holes = enclosedHoleStats()
+    const outline = outlineStats()
     const mouthCenter = windowStats(
       Math.max(mouthLeft, centerX - 3),
       mouthTop,
@@ -333,6 +389,7 @@ async function analyzePattern(page) {
       integrity: {
         activeComponents,
         holes,
+        outline,
         fillRatio: activeCount ? activeCount / Math.max(1, subjectW * subjectH) : 0,
       },
       colorBalance: {
@@ -422,6 +479,8 @@ async function main() {
         && result.integrity.activeComponents.largestRatio >= 0.96
         && result.integrity.holes.count <= 2
         && result.integrity.holes.totalArea <= Math.max(4, Math.round(result.colorBalance.activeCount * 0.015))
+        && result.integrity.outline.darkBoundaryRatio >= (testCase.label === 'pastel-low-contrast' ? 0.24 : 0.18)
+        && result.integrity.outline.vividBoundaryRatio <= 0.72
         && result.colorBalance.darkRatio <= 0.78
         && result.colorBalance.vividRatio >= (testCase.label === 'pastel-low-contrast' ? 0.2 : 0.055)
         && result.eyes.left.count >= 4
