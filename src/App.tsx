@@ -32,6 +32,8 @@ interface BeadCell {
 type BoardShape = 'ratio' | 'square'
 type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai'
+type SamplingMode = 'average' | 'dominant'
+type QuantizeMode = 'default' | 'craft'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 const DEFAULT_GRID_SIZE = 48
@@ -43,6 +45,7 @@ const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
 const QUICK_GRID_SIZES = [32, 48, 64, 96] as const
+const CRAFT_DARK_LUMA_THRESHOLD = 82
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -65,6 +68,26 @@ function nearestPaletteColor(r: number, g: number, b: number, palette: readonly 
     }
   })
   return bestIndex
+}
+
+function getColorLuma(hex: string) {
+  const { r, g, b } = hexToRgb(hex)
+  return r * 0.299 + g * 0.587 + b * 0.114
+}
+
+function isDarkPaletteColor(entry: BeadPaletteEntry) {
+  return getColorLuma(entry[2]) <= CRAFT_DARK_LUMA_THRESHOLD
+}
+
+function getCraftMaxColors(longSide: number, userMaxColors: number) {
+  if (longSide <= 32) return Math.min(userMaxColors, 6)
+  if (longSide <= 48) return Math.min(userMaxColors, 8)
+  if (longSide <= 56) return Math.min(userMaxColors, 10)
+  return Math.min(userMaxColors, 12)
+}
+
+function quantizeRgbBucket(r: number, g: number, b: number) {
+  return `${Math.round(r / 16)}-${Math.round(g / 16)}-${Math.round(b / 16)}`
 }
 
 async function loadImage(file: File): Promise<HTMLImageElement> {
@@ -130,6 +153,7 @@ function drawImageToSampledGrid(
   rows: number,
   shape: BoardShape,
   sharpQuantize: boolean,
+  samplingMode: SamplingMode = 'average',
 ) {
   const sampleScale = getSamplingScale(cols, rows)
   const canvas = document.createElement('canvas')
@@ -165,6 +189,7 @@ function drawImageToSampledGrid(
       let b = 0
       let a = 0
       let visibleCount = 0
+      const buckets = new Map<string, { count: number; r: number; g: number; b: number; a: number }>()
 
       for (let sampleY = 0; sampleY < sampleScale; sampleY += 1) {
         for (let sampleX = 0; sampleX < sampleScale; sampleX += 1) {
@@ -173,17 +198,37 @@ function drawImageToSampledGrid(
           const sourceOffset = (sourceY * canvas.width + sourceX) * 4
           const alpha = source[sourceOffset + 3]
           if (alpha < 80) continue
-          r += source[sourceOffset]
-          g += source[sourceOffset + 1]
-          b += source[sourceOffset + 2]
+          const sourceR = source[sourceOffset]
+          const sourceG = source[sourceOffset + 1]
+          const sourceB = source[sourceOffset + 2]
+          r += sourceR
+          g += sourceG
+          b += sourceB
           a += alpha
           visibleCount += 1
+
+          if (samplingMode === 'dominant') {
+            const bucketKey = quantizeRgbBucket(sourceR, sourceG, sourceB)
+            const bucket = buckets.get(bucketKey) ?? { count: 0, r: 0, g: 0, b: 0, a: 0 }
+            bucket.count += 1
+            bucket.r += sourceR
+            bucket.g += sourceG
+            bucket.b += sourceB
+            bucket.a += alpha
+            buckets.set(bucketKey, bucket)
+          }
         }
       }
 
       const targetOffset = (y * cols + x) * 4
       if (visibleCount === 0) {
         averaged.data[targetOffset + 3] = 0
+      } else if (samplingMode === 'dominant' && buckets.size) {
+        const dominant = [...buckets.values()].sort((left, right) => right.count - left.count)[0]
+        averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
+        averaged.data[targetOffset + 1] = Math.round(dominant.g / dominant.count)
+        averaged.data[targetOffset + 2] = Math.round(dominant.b / dominant.count)
+        averaged.data[targetOffset + 3] = Math.round(dominant.a / totalSamples)
       } else {
         averaged.data[targetOffset] = Math.round(r / visibleCount)
         averaged.data[targetOffset + 1] = Math.round(g / visibleCount)
@@ -194,6 +239,160 @@ function drawImageToSampledGrid(
   }
 
   return averaged
+}
+
+function getImageDataOffset(x: number, y: number, width: number) {
+  return (y * width + x) * 4
+}
+
+function getPaletteEdgeScores(imageData: ImageData, paletteIndexes: number[], palette: readonly BeadPaletteEntry[]) {
+  const { width, height, data } = imageData
+  const edgeScores = new Map<number, number>()
+  const directions = [[1, 0], [0, 1]] as const
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = getImageDataOffset(x, y, width)
+      if (data[offset + 3] < 80) continue
+      const paletteIndex = paletteIndexes[y * width + x]
+      if (paletteIndex < 0) continue
+      const current = hexToRgb(palette[paletteIndex][2])
+
+      directions.forEach(([dx, dy]) => {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx >= width || ny >= height) return
+        const neighborOffset = getImageDataOffset(nx, ny, width)
+        if (data[neighborOffset + 3] < 80) return
+        const neighborPaletteIndex = paletteIndexes[ny * width + nx]
+        if (neighborPaletteIndex < 0 || neighborPaletteIndex === paletteIndex) return
+        const neighbor = hexToRgb(palette[neighborPaletteIndex][2])
+        const contrast = Math.abs(current.r - neighbor.r) + Math.abs(current.g - neighbor.g) + Math.abs(current.b - neighbor.b)
+        if (contrast < 90) return
+        const bonus = isDarkPaletteColor(palette[paletteIndex]) ? 2 : 1
+        edgeScores.set(paletteIndex, (edgeScores.get(paletteIndex) ?? 0) + bonus)
+        edgeScores.set(neighborPaletteIndex, (edgeScores.get(neighborPaletteIndex) ?? 0) + (isDarkPaletteColor(palette[neighborPaletteIndex]) ? 2 : 1))
+      })
+    }
+  }
+
+  return edgeScores
+}
+
+function selectPaletteIndexes(
+  imageData: ImageData,
+  beadPalette: readonly BeadPaletteEntry[],
+  maxColorsForMode: number,
+  quantizeMode: QuantizeMode,
+) {
+  const paletteIndexes: number[] = []
+  const frequency = new Map<number, number>()
+  const { width, height, data } = imageData
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = getImageDataOffset(x, y, width)
+      if (data[offset + 3] < 80) {
+        paletteIndexes.push(-1)
+        continue
+      }
+      const index = nearestPaletteColor(data[offset], data[offset + 1], data[offset + 2], beadPalette)
+      paletteIndexes.push(index)
+      frequency.set(index, (frequency.get(index) ?? 0) + 1)
+    }
+  }
+
+  if (quantizeMode === 'default') {
+    return [...frequency.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxColorsForMode)
+      .map(([index]) => index)
+  }
+
+  const edgeScores = getPaletteEdgeScores(imageData, paletteIndexes, beadPalette)
+  const selected = [...frequency.entries()]
+    .sort((a, b) => {
+      const scoreA = a[1] + (edgeScores.get(a[0]) ?? 0) * 1.8 + (isDarkPaletteColor(beadPalette[a[0]]) ? Math.min(a[1], 24) : 0)
+      const scoreB = b[1] + (edgeScores.get(b[0]) ?? 0) * 1.8 + (isDarkPaletteColor(beadPalette[b[0]]) ? Math.min(b[1], 24) : 0)
+      return scoreB - scoreA
+    })
+    .slice(0, maxColorsForMode)
+    .map(([index]) => index)
+
+  if (!selected.some((index) => isDarkPaletteColor(beadPalette[index]))) {
+    const darkestFrequent = [...frequency.keys()]
+      .filter((index) => isDarkPaletteColor(beadPalette[index]))
+      .sort((a, b) => (frequency.get(b) ?? 0) - (frequency.get(a) ?? 0))[0]
+    if (darkestFrequent !== undefined) selected[selected.length - 1] = darkestFrequent
+  }
+
+  return [...new Set(selected)]
+}
+
+function buildGridFromImageData(
+  imageData: ImageData,
+  selectedPalette: PaletteColor[],
+  selectedColors: BeadPaletteEntry[],
+) {
+  const grid: BeadCell[][] = []
+  for (let y = 0; y < imageData.height; y += 1) {
+    const row: BeadCell[] = []
+    for (let x = 0; x < imageData.width; x += 1) {
+      const offset = getImageDataOffset(x, y, imageData.width)
+      if (imageData.data[offset + 3] < 80) {
+        row.push({ colorIndex: -1, hex: EMPTY_CELL_HEX, symbol: '' })
+        continue
+      }
+      const originalNearest = nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], selectedColors)
+      selectedPalette[originalNearest].count += 1
+      row.push({
+        colorIndex: originalNearest,
+        hex: selectedPalette[originalNearest].hex,
+        symbol: selectedPalette[originalNearest].symbol,
+      })
+    }
+    grid.push(row)
+  }
+  return grid
+}
+
+function cleanupCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[]) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const next = grid.map((row) => row.map((cell) => ({ ...cell })))
+  const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const cell = grid[y][x]
+      if (cell.colorIndex < 0 || isDarkIndex(cell.colorIndex)) continue
+      const neighborCounts = new Map<number, number>()
+      directions.forEach(([dx, dy]) => {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+        const neighborIndex = grid[ny][nx].colorIndex
+        if (neighborIndex >= 0) neighborCounts.set(neighborIndex, (neighborCounts.get(neighborIndex) ?? 0) + 1)
+      })
+      const [dominantIndex, dominantCount] = [...neighborCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [-1, 0]
+      if (dominantIndex >= 0 && dominantIndex !== cell.colorIndex && dominantCount >= 3) {
+        next[y][x] = {
+          colorIndex: dominantIndex,
+          hex: selectedPalette[dominantIndex].hex,
+          symbol: selectedPalette[dominantIndex].symbol,
+        }
+      }
+    }
+  }
+
+  selectedPalette.forEach((color) => { color.count = 0 })
+  next.forEach((row) => row.forEach((cell) => {
+    if (cell.colorIndex >= 0) selectedPalette[cell.colorIndex].count += 1
+  }))
+  return next
 }
 
 function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEntry[] }) {
@@ -487,10 +686,12 @@ function App() {
     nextMaxColors = maxColors,
     nextShape = shape,
     nextPaletteBrand = paletteBrand,
-    options?: { updatePreview?: boolean; sharpQuantize?: boolean },
+    options?: { updatePreview?: boolean; sharpQuantize?: boolean; quantizeMode?: QuantizeMode },
   ) {
     const updatePreview = options?.updatePreview ?? true
     const sharpQuantize = options?.sharpQuantize ?? false
+    const quantizeMode = options?.quantizeMode ?? 'default'
+    const samplingMode: SamplingMode = quantizeMode === 'craft' ? 'dominant' : 'average'
     const beadPalette = getPaletteColors(nextPaletteBrand)
     setError('')
     setIsProcessing(true)
@@ -505,23 +706,9 @@ function App() {
         setSourcePreview(URL.createObjectURL(file))
       }
 
-      const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize)
-
-      const sampled: number[] = []
-      for (let y = 0; y < rows; y += 1) {
-        for (let x = 0; x < cols; x += 1) {
-          const offset = (y * cols + x) * 4
-          if (imageData.data[offset + 3] < 80) continue
-          sampled.push(nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], beadPalette))
-        }
-      }
-
-      const frequency = new Map<number, number>()
-      sampled.forEach((index) => frequency.set(index, (frequency.get(index) ?? 0) + 1))
-      const selected = [...frequency.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, nextMaxColors)
-        .map(([index]) => index)
+      const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize, samplingMode)
+      const maxColorsForMode = quantizeMode === 'craft' ? getCraftMaxColors(Math.max(cols, rows), nextMaxColors) : nextMaxColors
+      const selected = selectPaletteIndexes(imageData, beadPalette, maxColorsForMode, quantizeMode)
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
       const selectedPalette = selected.map((paletteIndex, index) => ({
@@ -533,32 +720,11 @@ function App() {
       }))
 
       const selectedColors = selected.map((index) => beadPalette[index])
-      const grid: BeadCell[][] = []
-      for (let y = 0; y < rows; y += 1) {
-        const row: BeadCell[] = []
-        for (let x = 0; x < cols; x += 1) {
-          const offset = (y * cols + x) * 4
-          if (imageData.data[offset + 3] < 80) {
-            row.push({
-              colorIndex: -1,
-              hex: EMPTY_CELL_HEX,
-              symbol: '',
-            })
-            continue
-          }
-          const originalNearest = nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], selectedColors)
-          selectedPalette[originalNearest].count += 1
-          row.push({
-            colorIndex: originalNearest,
-            hex: selectedPalette[originalNearest].hex,
-            symbol: selectedPalette[originalNearest].symbol,
-          })
-        }
-        grid.push(row)
-      }
+      const grid = buildGridFromImageData(imageData, selectedPalette, selectedColors)
+      const finalGrid = quantizeMode === 'craft' ? cleanupCraftGrid(grid, selectedPalette) : grid
 
       setPalette(selectedPalette.filter((color) => color.count > 0))
-      setPattern(grid)
+      setPattern(finalGrid)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成失败，请换一张图片试试')
     } finally {
@@ -600,6 +766,7 @@ function App() {
       await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
+        quantizeMode: 'craft',
       })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
@@ -619,6 +786,7 @@ function App() {
       await generatePattern(file, nextGridSize, nextMaxColors, nextShape, nextPaletteBrand, {
         updatePreview: sourceMode !== 'ai',
         sharpQuantize: sourceMode === 'ai',
+        quantizeMode: sourceMode === 'ai' ? 'craft' : 'default',
       })
     }
   }
@@ -724,7 +892,7 @@ function App() {
             <div className="ai-panel">
               <div className="ai-panel-head">
                 <span>AI 风格</span>
-                <small>选择风格后一键生成</small>
+                <small>AI 模式会自动减少碎色、强化轮廓，并优先生成易拼图纸</small>
               </div>
               <div className="style-grid">
                 {AGNES_STYLE_PRESETS.map((style) => (
@@ -764,7 +932,7 @@ function App() {
           <label>
             <span>
               图纸尺寸 <b>最长边 {gridSize} 格</b>
-              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐 32–56 格' : ''}</small>
+              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐 32–56 格，会自动收紧实际颜色数' : ''}</small>
             </span>
             <input type="range" min="24" max="128" step="4" value={gridSize} onChange={(event) => {
               const value = Number(event.target.value)
