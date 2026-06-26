@@ -46,6 +46,8 @@ const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
 const QUICK_GRID_SIZES = [32, 48, 64, 96] as const
 const CRAFT_DARK_LUMA_THRESHOLD = 82
+const CRAFT_BACKGROUND_DISTANCE_THRESHOLD = 34
+const CRAFT_BACKGROUND_SOFT_DISTANCE_THRESHOLD = 52
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -243,6 +245,102 @@ function drawImageToSampledGrid(
 
 function getImageDataOffset(x: number, y: number, width: number) {
   return (y * width + x) * 4
+}
+
+interface RgbColor {
+  r: number
+  g: number
+  b: number
+}
+
+function colorDistanceSquared(a: RgbColor, b: RgbColor) {
+  return (a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2
+}
+
+function getImageDataColor(data: Uint8ClampedArray, offset: number): RgbColor {
+  return { r: data[offset], g: data[offset + 1], b: data[offset + 2] }
+}
+
+function estimateEdgeBackgroundColor(imageData: ImageData): RgbColor {
+  const { width, height, data } = imageData
+  const samples: RgbColor[] = []
+  const samplePoint = (x: number, y: number) => {
+    const offset = getImageDataOffset(
+      Math.min(width - 1, Math.max(0, x)),
+      Math.min(height - 1, Math.max(0, y)),
+      width,
+    )
+    if (data[offset + 3] >= 80) samples.push(getImageDataColor(data, offset))
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    samplePoint(x, 0)
+    samplePoint(x, height - 1)
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    samplePoint(0, y)
+    samplePoint(width - 1, y)
+  }
+
+  if (!samples.length) return { r: 255, g: 255, b: 255 }
+  const sortedR = samples.map((color) => color.r).sort((a, b) => a - b)
+  const sortedG = samples.map((color) => color.g).sort((a, b) => a - b)
+  const sortedB = samples.map((color) => color.b).sort((a, b) => a - b)
+  const middle = Math.floor(samples.length / 2)
+  return { r: sortedR[middle], g: sortedG[middle], b: sortedB[middle] }
+}
+
+function isCraftBackgroundCandidate(color: RgbColor, alpha: number, background: RgbColor) {
+  if (alpha < 80) return true
+  const min = Math.min(color.r, color.g, color.b)
+  const max = Math.max(color.r, color.g, color.b)
+  const chroma = max - min
+  const distance = colorDistanceSquared(color, background)
+  if (distance <= CRAFT_BACKGROUND_DISTANCE_THRESHOLD ** 2) return true
+  return min >= 228 && chroma <= 32 && distance <= CRAFT_BACKGROUND_SOFT_DISTANCE_THRESHOLD ** 2
+}
+
+function removeCraftEdgeBackground(imageData: ImageData) {
+  const { width, height, data } = imageData
+  if (!width || !height) return imageData
+
+  const background = estimateEdgeBackgroundColor(imageData)
+  const visited = new Uint8Array(width * height)
+  const queue: Array<[number, number]> = []
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return
+    const index = y * width + x
+    if (visited[index]) return
+    const offset = getImageDataOffset(x, y, width)
+    if (!isCraftBackgroundCandidate(getImageDataColor(data, offset), data[offset + 3], background)) return
+    visited[index] = 1
+    queue.push([x, y])
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0)
+    enqueue(x, height - 1)
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y)
+    enqueue(width - 1, y)
+  }
+
+  for (let head = 0; head < queue.length; head += 1) {
+    const [x, y] = queue[head]
+    enqueue(x + 1, y)
+    enqueue(x - 1, y)
+    enqueue(x, y + 1)
+    enqueue(x, y - 1)
+  }
+
+  const cleaned = new ImageData(new Uint8ClampedArray(data), width, height)
+  for (let index = 0; index < visited.length; index += 1) {
+    if (!visited[index]) continue
+    cleaned.data[index * 4 + 3] = 0
+  }
+
+  return cleaned
 }
 
 function getPaletteEdgeScores(imageData: ImageData, paletteIndexes: number[], palette: readonly BeadPaletteEntry[]) {
@@ -707,8 +805,9 @@ function App() {
       }
 
       const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize, samplingMode)
+      const quantizeImageData = quantizeMode === 'craft' ? removeCraftEdgeBackground(imageData) : imageData
       const maxColorsForMode = quantizeMode === 'craft' ? getCraftMaxColors(Math.max(cols, rows), nextMaxColors) : nextMaxColors
-      const selected = selectPaletteIndexes(imageData, beadPalette, maxColorsForMode, quantizeMode)
+      const selected = selectPaletteIndexes(quantizeImageData, beadPalette, maxColorsForMode, quantizeMode)
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
       const selectedPalette = selected.map((paletteIndex, index) => ({
@@ -720,7 +819,7 @@ function App() {
       }))
 
       const selectedColors = selected.map((index) => beadPalette[index])
-      const grid = buildGridFromImageData(imageData, selectedPalette, selectedColors)
+      const grid = buildGridFromImageData(quantizeImageData, selectedPalette, selectedColors)
       const finalGrid = quantizeMode === 'craft' ? cleanupCraftGrid(grid, selectedPalette) : grid
 
       setPalette(selectedPalette.filter((color) => color.count > 0))

@@ -6,7 +6,7 @@ export interface AgnesStylePreset {
 }
 
 export const AGNES_BASE_PROMPT =
-  '把参考图转换成适合拼豆图纸生成的拼豆分色稿，重点突出主体。放大主体，让主体占画面面积的 75-90%。使用纯色平涂色块，不要渐变、不要柔和阴影、不要抗锯齿、不要真实照片纹理。保持高对比、硬边缘、粗深色轮廓、有限配色和适合小尺寸拼豆网格的图标化构图。不要大面积空白边距，不要让小主体漂浮在大片空背景中。'
+  '把参考图转换成适合拼豆图纸生成的拼豆分色稿，重点突出主体。放大主体，让主体占画面面积的 82-95%。使用纯色平涂色块，不要渐变、不要柔和阴影、不要抗锯齿、不要真实照片纹理。保持高对比、硬边缘、粗深色轮廓、有限配色和适合小尺寸拼豆网格的图标化构图。背景必须是透明或单一浅色空白，并且不应作为拼豆内容；不要大面积空白边距，不要让小主体漂浮在大片空背景中。'
 
 export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
   {
@@ -14,7 +14,7 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
     label: '拼豆分色稿',
     description: '少色、粗轮廓，最适合实际拼豆',
     promptSuffix:
-      'Clean perler bead pattern draft for later quantization. Use only 6 to 8 flat hard-edged colors. No gradients, no soft shadows, no anti-aliasing, no realistic skin texture. Use thick black or very dark outlines around hair, face, eyes, mouth, hands, clothing, and important object edges. Simplify facial features into readable pixel symbols: dark oval eyes, short simple mouth, minimal nose shadow. Preserve recognizable clothing patterns as large simple shapes. Remove background, text, and watermarks. The image should be a clean source for a printable bead chart, not a realistic photo.',
+      'Clean isolated perler bead pattern draft for later quantization. Use only 6 to 8 flat hard-edged colors for the subject. No gradients, no soft shadows, no anti-aliasing, no realistic skin texture. Use thick black or very dark outlines around hair, face, eyes, mouth, hands, clothing, and important object edges. Simplify facial features into readable pixel symbols: dark oval eyes, short simple mouth, minimal nose shadow. Preserve recognizable clothing patterns as large simple shapes. Remove background, text, and watermarks. Keep the background transparent or plain off-white and visually separate from the subject; it must not become part of the bead design. The image should be a clean source for a printable bead chart, not a realistic photo.',
   },
   {
     id: 'pixel-classic',
@@ -58,20 +58,20 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
 function buildGridSizePrompt(gridSize?: number) {
   if (!gridSize) return ''
   if (gridSize <= 32) {
-    return '最终图纸最长边只有 24-32 格，请按超小拼豆图处理：最多 6 个主色，极粗轮廓，五官只保留眼睛和短嘴线，删除纹理、小物件和背景，只保留能在小格子中看懂的主体轮廓。'
+    return '最终图纸最长边只有 24-32 格，请按超小拼豆图处理：最多 6 个主体主色，极粗轮廓，五官只保留眼睛和短嘴线，删除纹理、小物件和背景，只保留能在小格子中看懂的主体轮廓。背景不能占用拼豆格。'
   }
   if (gridSize <= 48) {
-    return '最终图纸最长边约 32-48 格，请使用 6-8 个主色和大色块，保留发型、眼睛、嘴巴、脸型、手势和服装大特征，避免任何渐变、碎阴影和细小纹理。'
+    return '最终图纸最长边约 32-48 格，请使用 6-8 个主体主色和大色块，保留发型、眼睛、嘴巴、脸型、手势和服装大特征，避免任何渐变、碎阴影和细小纹理。背景必须极简并可被裁掉，不能成为图案主体。'
   }
   if (gridSize <= 56) {
-    return '目标图纸较小，请进一步简化为图标级构图，使用 8-10 个主色，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更大的色块。'
+    return '目标图纸较小，请进一步简化为图标级构图，使用 8-10 个主体主色，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更大的色块。背景不要参与拼豆。'
   }
   return '即使目标图纸较大，也请保持拼豆友好的有限配色、清晰轮廓和硬边缘，避免照片级渐变和细碎纹理。'
 }
 
 function buildFramingPrompt(styleId: string) {
   if (styleId === 'cute-chibi') return ''
-  return '构图要求：近景、紧凑裁切，主体居中，主体占画面 75-90%。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景、背景细节、文字和水印。人像请保留发型、眼睛、嘴巴、脸型、手势和服装图案，用深色轮廓分隔头发、脸、手、脖子和衣服。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
+  return '构图要求：近景、紧凑裁切，主体居中，主体占画面 82-95%。背景使用透明或单一浅色极简背景，只在必要时保留很窄边距，并确保背景与主体有清楚边界便于后续删除。移除干扰性的场景、背景细节、文字和水印。人像请保留发型、眼睛、嘴巴、脸型、手势和服装图案，用深色轮廓分隔头发、脸、手、脖子和衣服。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。'
 }
 
 export function buildAgnesPrompt(
