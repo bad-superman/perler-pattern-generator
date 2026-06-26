@@ -4,6 +4,7 @@ import {
   AI_SVG,
   ANIMAL_AI_SVG,
   DETACHED_BODY_AI_SVG,
+  FAR_DECORATION_AI_SVG,
   FRAGILE_AI_SVG,
   MISSING_FEATURES_AI_SVG,
   OUT_DIR,
@@ -433,6 +434,7 @@ async function main() {
     { label: 'fragile', svg: FRAGILE_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-fragile.png') },
     { label: 'missing-features', svg: MISSING_FEATURES_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-missing-features.png') },
     { label: 'small-offcenter', svg: SMALL_OFFCENTER_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-small-offcenter.png') },
+    { label: 'far-decoration', svg: FAR_DECORATION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-far-decoration.png') },
     { label: 'pastel-low-contrast', svg: PASTEL_LOW_CONTRAST_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-pastel-low-contrast.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
@@ -492,6 +494,7 @@ async function main() {
         && result.cellCount === 1296
         && result.legendCount <= 7
         && (testCase.label !== 'textured-realistic' || result.legendCount <= 5)
+        && (testCase.label !== 'far-decoration' || result.bounds.subjectW <= 28)
         && result.integrity.activeComponents.significantCount <= 1
         && result.integrity.activeComponents.largestRatio >= 0.96
         && result.integrity.holes.count <= 2

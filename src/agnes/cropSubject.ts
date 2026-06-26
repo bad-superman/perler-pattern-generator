@@ -97,6 +97,11 @@ interface ContentComponent extends ContentBounds {
   centerY: number
 }
 
+interface CropSubjectOptions {
+  square?: boolean
+  tinyGrid?: boolean
+}
+
 function findContentComponents(width: number, height: number, data: Uint8ClampedArray) {
   const background = estimateBackgroundColor(width, height, data)
   const visited = new Uint8Array(width * height)
@@ -183,7 +188,89 @@ function componentGap(a: ContentBounds, b: ContentBounds) {
   return Math.hypot(dx, dy)
 }
 
-function pickPrimarySubjectBounds(width: number, height: number, data: Uint8ClampedArray) {
+function removeDistantTinyGridComponents(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return false
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const components = findContentComponents(canvas.width, canvas.height, imageData.data)
+    .filter((component) => component.area >= Math.max(8, canvas.width * canvas.height * 0.00005))
+  if (components.length <= 1) return false
+
+  const canvasCenterX = canvas.width / 2
+  const canvasCenterY = canvas.height / 2
+  const diagonal = Math.hypot(canvas.width, canvas.height)
+  const primary = components
+    .sort((a, b) => {
+      const score = (component: ContentComponent) => (
+        component.area * (1 - Math.min(0.42, Math.hypot(component.centerX - canvasCenterX, component.centerY - canvasCenterY) / diagonal))
+      )
+      return score(b) - score(a)
+    })[0]
+  const primaryW = primary.maxX - primary.minX + 1
+  const primaryH = primary.maxY - primary.minY + 1
+  const primaryLongSide = Math.max(primaryW, primaryH)
+
+  const shouldKeep = (component: ContentComponent) => {
+    if (component === primary) return true
+
+    const componentW = component.maxX - component.minX + 1
+    const componentH = component.maxY - component.minY + 1
+    const componentLongSide = Math.max(componentW, componentH)
+    const gap = componentGap(primary, component)
+    const overlapsPrimaryAxis = component.maxX >= primary.minX - primaryLongSide * 0.18
+      && component.minX <= primary.maxX + primaryLongSide * 0.18
+      && component.maxY >= primary.minY - primaryLongSide * 0.18
+      && component.minY <= primary.maxY + primaryLongSide * 0.18
+    const largeRelatedPart = component.area >= primary.area * 0.12
+      && (
+        (overlapsPrimaryAxis && gap <= primaryLongSide * 0.26)
+        || component.area >= primary.area * 0.45
+      )
+    const closeSmallPart = component.area >= primary.area * 0.01
+      && componentLongSide <= primaryLongSide * 0.24
+      && gap <= primaryLongSide * 0.09
+
+    return largeRelatedPart || closeSmallPart
+  }
+
+  let changed = false
+  const background = estimateBackgroundColor(canvas.width, canvas.height, imageData.data)
+  components.forEach((component) => {
+    if (shouldKeep(component)) return
+    changed = true
+
+    for (let y = component.minY; y <= component.maxY; y += 1) {
+      for (let x = component.minX; x <= component.maxX; x += 1) {
+        const offset = (y * canvas.width + x) * 4
+        if (isBackgroundPixel(
+          imageData.data[offset],
+          imageData.data[offset + 1],
+          imageData.data[offset + 2],
+          imageData.data[offset + 3],
+          background,
+        )) {
+          continue
+        }
+        imageData.data[offset] = 255
+        imageData.data[offset + 1] = 250
+        imageData.data[offset + 2] = 241
+        imageData.data[offset + 3] = 255
+      }
+    }
+  })
+
+  if (!changed) return false
+  ctx.putImageData(imageData, 0, 0)
+  return true
+}
+
+function pickPrimarySubjectBounds(
+  width: number,
+  height: number,
+  data: Uint8ClampedArray,
+  options: CropSubjectOptions = {},
+) {
   const components = findContentComponents(width, height, data)
     .filter((component) => component.area >= Math.max(8, width * height * 0.00005))
   if (!components.length) return null
@@ -202,6 +289,7 @@ function pickPrimarySubjectBounds(width: number, height: number, data: Uint8Clam
   const primaryW = primary.maxX - primary.minX + 1
   const primaryH = primary.maxY - primary.minY + 1
   const primaryLongSide = Math.max(primaryW, primaryH)
+  const tinyGrid = options.tinyGrid ?? false
   let bounds: ContentBounds = {
     minX: primary.minX,
     minY: primary.minY,
@@ -214,20 +302,31 @@ function pickPrimarySubjectBounds(width: number, height: number, data: Uint8Clam
     const componentW = component.maxX - component.minX + 1
     const componentH = component.maxY - component.minY + 1
     const componentLongSide = Math.max(componentW, componentH)
+    const gap = componentGap(primary, component)
     const expandedPrimary = {
-      minX: primary.minX - primaryLongSide * 0.22,
-      minY: primary.minY - primaryLongSide * 0.22,
-      maxX: primary.maxX + primaryLongSide * 0.22,
-      maxY: primary.maxY + primaryLongSide * 0.22,
+      minX: primary.minX - primaryLongSide * (tinyGrid ? 0.18 : 0.22),
+      minY: primary.minY - primaryLongSide * (tinyGrid ? 0.18 : 0.22),
+      maxX: primary.maxX + primaryLongSide * (tinyGrid ? 0.18 : 0.22),
+      maxY: primary.maxY + primaryLongSide * (tinyGrid ? 0.18 : 0.22),
     }
     const centerNearPrimary = component.centerX >= expandedPrimary.minX
       && component.centerX <= expandedPrimary.maxX
       && component.centerY >= expandedPrimary.minY
       && component.centerY <= expandedPrimary.maxY
-    const largeRelatedPart = component.area >= primary.area * 0.08
+    const overlapsPrimaryAxis = component.maxX >= primary.minX - primaryLongSide * 0.18
+      && component.minX <= primary.maxX + primaryLongSide * 0.18
+      && component.maxY >= primary.minY - primaryLongSide * 0.18
+      && component.minY <= primary.maxY + primaryLongSide * 0.18
+    const largeRelatedPart = tinyGrid
+      ? component.area >= primary.area * 0.12
+        && (
+          (overlapsPrimaryAxis && gap <= primaryLongSide * 0.26)
+          || component.area >= primary.area * 0.45
+        )
+      : component.area >= primary.area * 0.08
     const closeSmallPart = component.area >= primary.area * 0.01
-      && componentLongSide <= primaryLongSide * 0.45
-      && componentGap(primary, component) <= primaryLongSide * 0.12
+      && componentLongSide <= primaryLongSide * (tinyGrid ? 0.24 : 0.45)
+      && gap <= primaryLongSide * (tinyGrid ? 0.09 : 0.12)
 
     if (centerNearPrimary || largeRelatedPart || closeSmallPart) {
       bounds = mergeBounds(bounds, component)
@@ -237,7 +336,7 @@ function pickPrimarySubjectBounds(width: number, height: number, data: Uint8Clam
   return bounds
 }
 
-export async function cropSubjectFromImage(file: File, options: { square?: boolean } = {}): Promise<File> {
+export async function cropSubjectFromImage(file: File, options: CropSubjectOptions = {}): Promise<File> {
   const image = await loadImage(file)
   const canvas = document.createElement('canvas')
   canvas.width = image.width
@@ -247,7 +346,7 @@ export async function cropSubjectFromImage(file: File, options: { square?: boole
 
   ctx.drawImage(image, 0, 0)
   const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  const primaryBounds = pickPrimarySubjectBounds(canvas.width, canvas.height, initialData.data)
+  const primaryBounds = pickPrimarySubjectBounds(canvas.width, canvas.height, initialData.data, options)
   const initialBounds = primaryBounds ?? findContentBounds(canvas.width, canvas.height, initialData.data)
   if (!initialBounds) return file
 
@@ -258,6 +357,18 @@ export async function cropSubjectFromImage(file: File, options: { square?: boole
   const contentW = initialBounds.maxX - initialBounds.minX + 1
   const contentH = initialBounds.maxY - initialBounds.minY + 1
   const initialFillRatio = (contentW * contentH) / (canvas.width * canvas.height)
+  if (options.tinyGrid && removeDistantTinyGridComponents(cropped)) {
+    const croppedCtx = cropped.getContext('2d', { willReadFrequently: true })
+    if (croppedCtx) {
+      const cleanedData = croppedCtx.getImageData(0, 0, cropped.width, cropped.height)
+      const cleanedBounds = findContentBounds(cropped.width, cropped.height, cleanedData.data)
+      if (cleanedBounds) {
+        const cleaned = cropCanvasToBounds(cropped, cleanedBounds, paddingRatio, options.square ?? false)
+        if (cleaned) cropped = cleaned
+      }
+    }
+  }
+
   if (initialFillRatio < 0.6) {
     const croppedCtx = cropped.getContext('2d', { willReadFrequently: true })
     if (croppedCtx) {

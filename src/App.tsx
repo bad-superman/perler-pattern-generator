@@ -2669,7 +2669,10 @@ function App() {
         size,
       })
       const framedFile = await cropToReferenceFraming(aiFile, refFile)
-      const croppedFile = await cropSubjectFromImage(framedFile, { square: patternShape === 'square' })
+      const croppedFile = await cropSubjectFromImage(framedFile, {
+        square: patternShape === 'square',
+        tinyGrid: gridSize <= 40,
+      })
       await generatePattern(croppedFile, gridSize, maxColors, patternShape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,

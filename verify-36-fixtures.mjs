@@ -84,6 +84,25 @@ export const SMALL_OFFCENTER_AI_SVG = `
   <path d="M842 118 L882 208 L982 218 L908 286 L930 384 L842 334 L754 384 L776 286 L702 218 L802 208 Z" fill="#fff044" stroke="#171118" stroke-width="12"/>
 </svg>`
 
+export const FAR_DECORATION_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <g>
+    <rect x="332" y="690" width="260" height="220" rx="80" fill="#ff5bbd" stroke="#171118" stroke-width="28"/>
+    <ellipse cx="462" cy="442" rx="260" ry="300" fill="#6f45ff" stroke="#171118" stroke-width="28"/>
+    <ellipse cx="462" cy="468" rx="210" ry="246" fill="#ffd2b8" stroke="#171118" stroke-width="24"/>
+    <path d="M232 338 Q462 130 692 338 L660 398 Q462 310 264 398 Z" fill="#8e58ff" stroke="#171118" stroke-width="18"/>
+    <ellipse cx="378" cy="448" rx="24" ry="34" fill="#151015"/>
+    <ellipse cx="546" cy="448" rx="24" ry="34" fill="#151015"/>
+    <ellipse cx="386" cy="436" rx="7" ry="9" fill="#ffffff"/>
+    <ellipse cx="554" cy="436" rx="7" ry="9" fill="#ffffff"/>
+    <path d="M430 544 Q462 572 496 544" fill="none" stroke="#171118" stroke-width="10" stroke-linecap="round"/>
+    <ellipse cx="326" cy="528" rx="30" ry="20" fill="#ff85ad"/>
+    <ellipse cx="598" cy="528" rx="30" ry="20" fill="#ff85ad"/>
+  </g>
+  <path d="M875 142 L916 246 L1000 260 L936 330 L954 430 L875 378 L796 430 L814 330 L750 260 L834 246 Z" fill="#fff044" stroke="#171118" stroke-width="14"/>
+</svg>`
+
 export const PASTEL_LOW_CONTRAST_AI_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#fffaf1"/>
