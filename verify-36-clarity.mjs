@@ -8,6 +8,7 @@ import {
   FAR_DECORATION_AI_SVG,
   FRAGILE_AI_SVG,
   MISSING_FEATURES_AI_SVG,
+  MOUTH_CONFUSION_AI_SVG,
   MUTED_FEATURES_AI_SVG,
   OUT_DIR,
   PASTEL_LOW_CONTRAST_AI_SVG,
@@ -374,6 +375,7 @@ async function analyzePattern(page) {
     const mouthBottom = minY + Math.round(subjectH * 0.76)
     const mouthLeft = Math.max(minX + 2, centerX - Math.max(3, Math.round(subjectW * 0.2)))
     const mouthRight = Math.min(maxX - 2, centerX + Math.max(3, Math.round(subjectW * 0.2)))
+    const expectedMouthY = minY + Math.round(subjectH * 0.6)
     let bestMouthRun = 0
     for (let y = mouthTop; y <= mouthBottom; y += 1) {
       let run = 0
@@ -387,6 +389,19 @@ async function analyzePattern(page) {
       }
       bestMouthRun = Math.max(bestMouthRun, run)
     }
+    let bestMouthRunNearExpected = 0
+    for (let y = Math.max(mouthTop, expectedMouthY - 3); y <= Math.min(mouthBottom, expectedMouthY + 3); y += 1) {
+      let run = 0
+      for (let x = mouthLeft; x <= mouthRight; x += 1) {
+        if (dark[idx(x, y)]) {
+          run += 1
+        } else {
+          bestMouthRunNearExpected = Math.max(bestMouthRunNearExpected, run)
+          run = 0
+        }
+      }
+      bestMouthRunNearExpected = Math.max(bestMouthRunNearExpected, run)
+    }
     const activeComponents = componentStats(active)
     const holes = enclosedHoleStats()
     const outline = outlineStats()
@@ -396,6 +411,12 @@ async function analyzePattern(page) {
       mouthTop,
       Math.min(mouthRight, centerX + 3),
       mouthBottom,
+    )
+    const mouthCore = windowStats(
+      Math.max(mouthLeft, centerX - 3),
+      Math.max(mouthTop, expectedMouthY - 2),
+      Math.min(mouthRight, centerX + 3),
+      Math.min(mouthBottom, expectedMouthY + 2),
     )
 
     return {
@@ -425,7 +446,9 @@ async function analyzePattern(page) {
       eyes: { left: leftEye, right: rightEye },
       eyeCore: { left: leftEyeCore, right: rightEyeCore },
       mouthCenter,
+      mouthCore,
       bestMouthRun,
+      bestMouthRunNearExpected,
     }
   }, { parseRgb: parseRgb.toString() })
 }
@@ -442,6 +465,7 @@ async function main() {
     { label: 'muted-features', svg: MUTED_FEATURES_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-muted-features.png') },
     { label: 'tiny-nearby-details', svg: TINY_NEARBY_DETAILS_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-tiny-nearby-details.png') },
     { label: 'brow-confusion', svg: BROW_CONFUSION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-brow-confusion.png') },
+    { label: 'mouth-confusion', svg: MOUTH_CONFUSION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-mouth-confusion.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
     { label: 'detached-body', svg: DETACHED_BODY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-detached-body.png') },
@@ -542,6 +566,14 @@ async function main() {
             result.eyeCore.left.local.count >= 8
             && result.eyeCore.right.local.count >= 8
             && result.bestMouthRun >= 5
+          )
+        )
+        && (
+          testCase.label !== 'mouth-confusion'
+          || (
+            result.mouthCore.count >= 5
+            && result.mouthCore.width >= 5
+            && result.bestMouthRunNearExpected >= 5
           )
         )
         && result.mouthCenter.count >= 4

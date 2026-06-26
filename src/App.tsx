@@ -2058,23 +2058,36 @@ function getBestHorizontalDarkRunInRegion(
   const cols = grid[0]?.length ?? 0
   let bestRun = 0
   let bestY = -1
+  let bestStartX = -1
+  let bestEndX = -1
 
   for (let y = Math.max(0, top); y <= Math.min(rows - 1, bottom); y += 1) {
     let currentRun = 0
+    let currentStartX = -1
     for (let x = Math.max(0, left); x <= Math.min(cols - 1, right); x += 1) {
       if (isDarkPaletteIndex(grid[y][x].colorIndex, selectedPalette)) {
+        if (currentRun === 0) currentStartX = x
         currentRun += 1
       } else {
         currentRun = 0
+        currentStartX = -1
       }
       if (currentRun > bestRun) {
         bestRun = currentRun
         bestY = y
+        bestStartX = currentStartX
+        bestEndX = x
       }
     }
   }
 
-  return { bestRun, bestY }
+  return {
+    bestRun,
+    bestY,
+    bestStartX,
+    bestEndX,
+    bestCenterX: bestStartX >= 0 && bestEndX >= bestStartX ? (bestStartX + bestEndX) / 2 : -1,
+  }
 }
 
 function drawReadable36Eye(
@@ -2307,13 +2320,25 @@ function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[]
     mouthXEnd,
     mouthYEnd,
   )
+  const mouthYTolerance = Math.max(2, Math.round(subjectH * 0.08))
+  const mouthCenterTolerance = Math.max(2, Math.round(subjectW * 0.12))
+  const maxReadableMouthRun = Math.max(5, Math.round(subjectW * 0.28))
+  const hasPlausibleMouthRun = horizontalRun.bestRun >= 3
+    && horizontalRun.bestRun <= maxReadableMouthRun
+    && horizontalRun.bestY >= 0
+    && Math.abs(horizontalRun.bestY - expectedMouthY) <= mouthYTolerance
+    && Math.abs(horizontalRun.bestCenterX - centerX) <= mouthCenterTolerance
 
-  if (horizontalRun.bestRun >= 3 && centerStats.count >= 2 && centerStats.width >= 3) return grid
+  if (hasPlausibleMouthRun && centerStats.count >= 2 && centerStats.width >= 3) return grid
 
   const next = cloneGrid(grid)
-  const mouthY = horizontalRun.bestRun >= 2 && horizontalRun.bestY >= 0
+  const hasNearbyMouthRun = horizontalRun.bestRun >= 2
+    && horizontalRun.bestY >= 0
+    && Math.abs(horizontalRun.bestY - expectedMouthY) <= mouthYTolerance
+    && Math.abs(horizontalRun.bestCenterX - centerX) <= mouthCenterTolerance
+  const mouthY = hasNearbyMouthRun
     ? horizontalRun.bestY
-    : bestDarkCount >= 2 && bestY >= 0
+    : bestDarkCount >= 2 && bestY >= 0 && Math.abs(bestY - expectedMouthY) <= mouthYTolerance
       ? bestY
       : expectedMouthY
   const strokeHalf = subjectW <= 20 ? 1 : 2
