@@ -198,6 +198,19 @@ export const MUTED_GRAY_AI_SVG = `
   <ellipse cx="686" cy="548" rx="34" ry="22" fill="#c7bfc2"/>
 </svg>`
 
+export const EYE_BAND_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <rect x="356" y="664" width="312" height="244" rx="82" fill="#5bdcff" stroke="#171118" stroke-width="24"/>
+  <ellipse cx="512" cy="452" rx="342" ry="352" fill="#ff68c8" stroke="#171118" stroke-width="28"/>
+  <ellipse cx="512" cy="492" rx="278" ry="304" fill="#ffd6bd" stroke="#171118" stroke-width="18"/>
+  <path d="M194 340 Q512 86 830 340 L786 420 Q512 320 238 420 Z" fill="#9b58ff" stroke="#171118" stroke-width="20"/>
+  <rect x="346" y="454" width="332" height="74" rx="34" fill="#151015"/>
+  <path d="M484 574 Q512 594 540 574" fill="none" stroke="#171118" stroke-width="9" stroke-linecap="round"/>
+  <ellipse cx="338" cy="550" rx="34" ry="22" fill="#ff90b9"/>
+  <ellipse cx="686" cy="550" rx="34" ry="22" fill="#ff90b9"/>
+</svg>`
+
 export const ANIMAL_AI_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#fffaf1"/>

@@ -2148,6 +2148,76 @@ function drawReadable36Eye(
   }
 }
 
+function separate36EyeBand(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  longSide: number,
+) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const subjectW = bounds.maxX - bounds.minX + 1
+  const subjectH = bounds.maxY - bounds.minY + 1
+  const centerX = Math.round((bounds.minX + bounds.maxX) / 2)
+  const expectedEyeY = bounds.minY + Math.round(subjectH * 0.43)
+  const eyeTop = bounds.minY + Math.round(subjectH * 0.28)
+  const eyeBottom = bounds.minY + Math.round(subjectH * 0.55)
+  const minBandRun = Math.max(9, Math.round(subjectW * 0.34))
+  const splitHalf = subjectW >= 28 ? 1 : 0
+  let changed = false
+  const next = cloneGrid(grid)
+
+  for (let y = Math.max(0, eyeTop); y <= Math.min(rows - 1, eyeBottom); y += 1) {
+    let runStart = -1
+    let runEnd = -1
+    let runLength = 0
+    for (let x = Math.max(0, bounds.minX + 2); x <= Math.min(cols - 1, bounds.maxX - 2); x += 1) {
+      if (isDarkPaletteIndex(grid[y][x].colorIndex, selectedPalette)) {
+        if (runLength === 0) runStart = x
+        runLength += 1
+        runEnd = x
+      } else {
+        if (
+          runLength >= minBandRun
+          && runStart <= centerX - 2
+          && runEnd >= centerX + 2
+          && Math.abs(y - expectedEyeY) <= Math.max(2, Math.round(subjectH * 0.09))
+        ) {
+          for (let splitX = centerX - splitHalf; splitX <= centerX + splitHalf; splitX += 1) {
+            const fillIndex = findLocalFillIndex(next, selectedPalette, splitX, y, -1)
+            if (fillIndex >= 0) {
+              placeCellIfUseful(next, selectedPalette, splitX, y, fillIndex)
+              changed = true
+            }
+          }
+        }
+        runLength = 0
+        runStart = -1
+        runEnd = -1
+      }
+    }
+    if (
+      runLength >= minBandRun
+      && runStart <= centerX - 2
+      && runEnd >= centerX + 2
+      && Math.abs(y - expectedEyeY) <= Math.max(2, Math.round(subjectH * 0.09))
+    ) {
+      for (let splitX = centerX - splitHalf; splitX <= centerX + splitHalf; splitX += 1) {
+        const fillIndex = findLocalFillIndex(next, selectedPalette, splitX, y, -1)
+        if (fillIndex >= 0) {
+          placeCellIfUseful(next, selectedPalette, splitX, y, fillIndex)
+          changed = true
+        }
+      }
+    }
+  }
+
+  return changed ? next : grid
+}
+
 function strengthen36FacialFeatures(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
   if (longSide > 40) return grid
   const rows = grid.length
@@ -2563,6 +2633,7 @@ function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
   next = connect36DarkDiagonalSteps(next, selectedPalette, longSide)
   next = reinforceTinyDarkFeatures(next, selectedPalette, longSide)
   next = strengthen36FacialFeatures(next, selectedPalette, longSide)
+  next = separate36EyeBand(next, selectedPalette, longSide)
   next = ensure36EyePair(next, selectedPalette, longSide)
   next = ensure36MouthStroke(next, selectedPalette, longSide)
   next = smooth36MouthStroke(next, selectedPalette, longSide)
