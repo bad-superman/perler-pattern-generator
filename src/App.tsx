@@ -38,24 +38,27 @@ type QuantizeMode = 'default' | 'craft'
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 const DEFAULT_GRID_SIZE = 48
 const EMPTY_CELL_HEX = '#fffaf1'
-const AI_DEFAULT_GRID_SIZE = 48
+const AI_DEFAULT_GRID_SIZE = 36
 const AI_GRID_RECOMMEND_MAX = 56
 const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
 const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
-const QUICK_GRID_SIZES = [32, 48, 64, 96] as const
+const QUICK_GRID_SIZES = [32, 36, 48, 64, 96] as const
 const CRAFT_DARK_LUMA_THRESHOLD = 82
 const CRAFT_FEATURE_LUMA_THRESHOLD = 96
+const CRAFT_36_FEATURE_LUMA_THRESHOLD = 118
 const CRAFT_BACKGROUND_DISTANCE_THRESHOLD = 34
 const CRAFT_BACKGROUND_SOFT_DISTANCE_THRESHOLD = 52
 const CRAFT_DETAIL_MIN_COVERAGE = 0.08
 const CRAFT_FEATURE_MIN_COVERAGE = 0.12
+const CRAFT_36_DETAIL_MIN_COVERAGE = 0.04
+const CRAFT_36_FEATURE_MIN_COVERAGE = 0.055
 const DEFAULT_AI_STYLE_ID = 'cute-chibi'
 const DEFAULT_AI_EXTRA_PROMPT = [
-  '目标：艳丽、完整、易拼的可爱 Q 版拼豆图纸。',
+  '目标：36×36 也清晰完整的艳丽可爱 Q 版拼豆图纸。',
   '请主动把原图改造成糖果色 Q 版，不要照搬原图的灰暗颜色或写实光影。',
-  '五官和边缘要为小尺寸拼豆重画：大眼睛、短而完整的嘴巴、连续粗轮廓、少色大色块。',
+  '五官和边缘要为小尺寸拼豆重画：3×3 左右的大眼睛、3-5 格的完整短嘴巴、连续粗轮廓、少色大色块。',
 ].join(' ')
 
 function hexToRgb(hex: string) {
@@ -159,6 +162,7 @@ function isDarkPaletteColor(entry: BeadPaletteEntry) {
 
 function getCraftMaxColors(longSide: number, userMaxColors: number) {
   if (longSide <= 32) return Math.min(userMaxColors, 6)
+  if (longSide <= 40) return Math.min(userMaxColors, 7)
   if (longSide <= 48) return Math.min(userMaxColors, 8)
   if (longSide <= 56) return Math.min(userMaxColors, 10)
   return Math.min(userMaxColors, 12)
@@ -203,7 +207,16 @@ interface ImageDrawRect {
 function computeImageDrawRect(image: HTMLImageElement, cols: number, rows: number, shape: BoardShape): ImageDrawRect {
   if (shape === 'square') {
     const size = Math.min(image.width, image.height)
-    return { sx: 0, sy: 0, sw: size, sh: size, dx: 0, dy: 0, dw: cols, dh: rows }
+    return {
+      sx: Math.max(0, Math.round((image.width - size) / 2)),
+      sy: Math.max(0, Math.round((image.height - size) / 2)),
+      sw: size,
+      sh: size,
+      dx: 0,
+      dy: 0,
+      dw: cols,
+      dh: rows,
+    }
   }
   return { sx: 0, sy: 0, sw: image.width, sh: image.height, dx: 0, dy: 0, dw: cols, dh: rows }
 }
@@ -222,7 +235,20 @@ function getExportCellSize(gridCols: number, gridRows: number) {
 }
 
 function getSamplingScale(cols: number, rows: number) {
+  if (Math.max(cols, rows) <= 40) return 8
   return Math.max(cols, rows) <= 64 ? 4 : 1
+}
+
+function getCraftFeatureLumaThreshold(longSide: number) {
+  return longSide <= 40 ? CRAFT_36_FEATURE_LUMA_THRESHOLD : CRAFT_FEATURE_LUMA_THRESHOLD
+}
+
+function getCraftFeatureMinCoverage(longSide: number) {
+  return longSide <= 40 ? CRAFT_36_FEATURE_MIN_COVERAGE : CRAFT_FEATURE_MIN_COVERAGE
+}
+
+function getCraftDetailMinCoverage(longSide: number) {
+  return longSide <= 40 ? CRAFT_36_DETAIL_MIN_COVERAGE : CRAFT_DETAIL_MIN_COVERAGE
 }
 
 function drawImageToSampledGrid(
@@ -234,6 +260,10 @@ function drawImageToSampledGrid(
   samplingMode: SamplingMode = 'average',
 ) {
   const sampleScale = getSamplingScale(cols, rows)
+  const longSide = Math.max(cols, rows)
+  const featureLumaThreshold = getCraftFeatureLumaThreshold(longSide)
+  const featureMinCoverage = getCraftFeatureMinCoverage(longSide)
+  const detailMinCoverage = getCraftDetailMinCoverage(longSide)
   const canvas = document.createElement('canvas')
   canvas.width = cols * sampleScale
   canvas.height = rows * sampleScale
@@ -290,7 +320,7 @@ function drawImageToSampledGrid(
           a += alpha
           visibleCount += 1
           const luma = sourceR * 0.299 + sourceG * 0.587 + sourceB * 0.114
-          if (samplingMode === 'feature' && luma <= CRAFT_FEATURE_LUMA_THRESHOLD) {
+          if (samplingMode === 'feature' && luma <= featureLumaThreshold) {
             darkR += sourceR
             darkG += sourceG
             darkB += sourceB
@@ -316,7 +346,7 @@ function drawImageToSampledGrid(
         averaged.data[targetOffset + 3] = 0
       } else if (
         samplingMode === 'feature'
-        && darkCount / totalSamples >= CRAFT_FEATURE_MIN_COVERAGE
+        && darkCount / totalSamples >= featureMinCoverage
       ) {
         averaged.data[targetOffset] = Math.round(darkR / darkCount)
         averaged.data[targetOffset + 1] = Math.round(darkG / darkCount)
@@ -333,7 +363,7 @@ function drawImageToSampledGrid(
         averaged.data[targetOffset] = Math.round(dominant.r / dominant.count)
         averaged.data[targetOffset + 1] = Math.round(dominant.g / dominant.count)
         averaged.data[targetOffset + 2] = Math.round(dominant.b / dominant.count)
-        averaged.data[targetOffset + 3] = visibleCount / totalSamples >= CRAFT_DETAIL_MIN_COVERAGE
+        averaged.data[targetOffset + 3] = visibleCount / totalSamples >= detailMinCoverage
           ? 255
           : Math.round(dominant.a / totalSamples)
       } else {
@@ -850,11 +880,259 @@ function removeTinyDetachedCraftIslands(grid: BeadCell[][]) {
   return next
 }
 
+function findSubjectBounds(grid: BeadCell[][]) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  let minX = cols
+  let minY = rows
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (grid[y][x].colorIndex < 0) continue
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return null
+  return { minX, minY, maxX, maxY }
+}
+
+function findBestDarkPaletteIndex(selectedPalette: PaletteColor[]) {
+  let bestIndex = -1
+  let bestScore = Number.POSITIVE_INFINITY
+  selectedPalette.forEach((color, index) => {
+    const luma = getColorLuma(color.hex)
+    if (luma > CRAFT_DARK_LUMA_THRESHOLD) return
+    const score = luma - Math.min(color.count, 30) * 0.4
+    if (score < bestScore) {
+      bestScore = score
+      bestIndex = index
+    }
+  })
+  return bestIndex
+}
+
+function findLocalFillIndex(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  x: number,
+  y: number,
+  fallbackIndex: number,
+) {
+  const neighborIndexes = ALL_DIRECTIONS
+    .map(([dx, dy]) => grid[y + dy]?.[x + dx]?.colorIndex ?? -1)
+    .filter((index) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') > CRAFT_DARK_LUMA_THRESHOLD)
+  return getDominantIndex(neighborIndexes) >= 0 ? getDominantIndex(neighborIndexes) : fallbackIndex
+}
+
+function placeCellIfUseful(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  x: number,
+  y: number,
+  index: number,
+) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (x < 0 || y < 0 || x >= cols || y >= rows || index < 0) return
+  const currentIndex = grid[y][x].colorIndex
+  if (currentIndex === index) return
+  grid[y][x] = makePaletteCell(index, selectedPalette)
+}
+
+function normalizeTinyDarkFeature(
+  grid: BeadCell[][],
+  selectedPalette: PaletteColor[],
+  component: Array<[number, number]>,
+  darkIndex: number,
+  fillIndex: number,
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+) {
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const minX = Math.min(...component.map(([x]) => x))
+  const maxX = Math.max(...component.map(([x]) => x))
+  const minY = Math.min(...component.map(([, y]) => y))
+  const maxY = Math.max(...component.map(([, y]) => y))
+  const width = maxX - minX + 1
+  const height = maxY - minY + 1
+  const centerX = Math.round(component.reduce((total, [x]) => total + x, 0) / component.length)
+  const centerY = Math.round(component.reduce((total, [, y]) => total + y, 0) / component.length)
+
+  if (centerY < bounds.minY + 3 || centerY > bounds.minY + Math.max(4, Math.round((bounds.maxY - bounds.minY + 1) * 0.7))) {
+    return
+  }
+
+  if (width <= 1 && height <= 2 && component.length <= 2) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const isCorner = Math.abs(dx) === 1 && Math.abs(dy) === 1
+        const index = isCorner && fillIndex >= 0 ? fillIndex : darkIndex
+        placeCellIfUseful(grid, selectedPalette, centerX + dx, centerY + dy, index)
+      }
+    }
+    return
+  }
+
+  if (width < 3 && height <= 3) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      placeCellIfUseful(grid, selectedPalette, centerX + dx, centerY, darkIndex)
+    }
+  }
+
+  if (height < 3 && width <= 3) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      placeCellIfUseful(grid, selectedPalette, centerX, centerY + dy, darkIndex)
+    }
+  }
+
+  if (centerX <= 1 || centerY <= 1 || centerX >= cols - 2 || centerY >= rows - 2) return
+  placeCellIfUseful(grid, selectedPalette, centerX, centerY, darkIndex)
+}
+
+function strengthen36FacialFeatures(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+
+  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+  const next = cloneGrid(grid)
+  const visited = new Uint8Array(rows * cols)
+  const faceTop = bounds.minY + Math.round((bounds.maxY - bounds.minY + 1) * 0.12)
+  const faceBottom = bounds.minY + Math.round((bounds.maxY - bounds.minY + 1) * 0.62)
+
+  for (let y = Math.max(0, faceTop); y <= Math.min(rows - 1, faceBottom); y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      const startKey = y * cols + x
+      const startIndex = grid[y][x].colorIndex
+      if (visited[startKey] || !isDarkIndex(startIndex)) continue
+
+      const component: Array<[number, number]> = []
+      const queue: Array<[number, number]> = [[x, y]]
+      visited[startKey] = 1
+
+      for (let head = 0; head < queue.length; head += 1) {
+        const [cx, cy] = queue[head]
+        component.push([cx, cy])
+        ALL_DIRECTIONS.forEach(([dx, dy]) => {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < bounds.minX || nx > bounds.maxX || ny < faceTop || ny > faceBottom) return
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+          const key = ny * cols + nx
+          if (visited[key] || grid[ny][nx].colorIndex !== startIndex) return
+          visited[key] = 1
+          queue.push([nx, ny])
+        })
+      }
+
+      if (component.length > 0 && component.length <= 5) {
+        const centerX = Math.round(component.reduce((total, [cx]) => total + cx, 0) / component.length)
+        const centerY = Math.round(component.reduce((total, [, cy]) => total + cy, 0) / component.length)
+        const fillIndex = findLocalFillIndex(grid, selectedPalette, centerX, centerY, -1)
+        normalizeTinyDarkFeature(next, selectedPalette, component, startIndex, fillIndex, bounds)
+      }
+    }
+  }
+
+  return next
+}
+
+function ensure36MouthStroke(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  const bounds = findSubjectBounds(grid)
+  if (!rows || !cols || !bounds) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+
+  const subjectW = bounds.maxX - bounds.minX + 1
+  const subjectH = bounds.maxY - bounds.minY + 1
+  const centerX = Math.round((bounds.minX + bounds.maxX) / 2)
+  const mouthYStart = bounds.minY + Math.round(subjectH * 0.38)
+  const mouthYEnd = bounds.minY + Math.round(subjectH * 0.68)
+  const mouthXStart = Math.max(bounds.minX + 2, centerX - Math.max(3, Math.round(subjectW * 0.16)))
+  const mouthXEnd = Math.min(bounds.maxX - 2, centerX + Math.max(3, Math.round(subjectW * 0.16)))
+  const isDarkIndex = (index: number) => index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+
+  let bestY = -1
+  let bestDarkCount = 0
+  for (let y = mouthYStart; y <= Math.min(rows - 1, mouthYEnd); y += 1) {
+    let darkCount = 0
+    for (let x = mouthXStart; x <= mouthXEnd; x += 1) {
+      if (isDarkIndex(grid[y]?.[x]?.colorIndex ?? -1)) darkCount += 1
+    }
+    if (darkCount > bestDarkCount) {
+      bestDarkCount = darkCount
+      bestY = y
+    }
+  }
+
+  if (bestDarkCount >= 3) return grid
+
+  const next = cloneGrid(grid)
+  const mouthY = bestY >= 0 ? bestY : bounds.minY + Math.round(subjectH * 0.52)
+  const strokeHalf = subjectW <= 20 ? 1 : 2
+  for (let dx = -strokeHalf; dx <= strokeHalf; dx += 1) {
+    const x = centerX + dx
+    const current = grid[mouthY]?.[x]?.colorIndex ?? -1
+    if (current < 0) continue
+    placeCellIfUseful(next, selectedPalette, x, mouthY, darkIndex)
+  }
+  return next
+}
+
+function thicken36OuterSilhouette(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const rows = grid.length
+  const cols = grid[0]?.length ?? 0
+  if (!rows || !cols) return grid
+
+  const darkIndex = findBestDarkPaletteIndex(selectedPalette)
+  if (darkIndex < 0) return grid
+  const next = cloneGrid(grid)
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (grid[y][x].colorIndex < 0) continue
+      const touchesEmpty = CARDINAL_DIRECTIONS.some(([dx, dy]) => (
+        (grid[y + dy]?.[x + dx]?.colorIndex ?? -1) < 0
+      ))
+      if (!touchesEmpty) continue
+
+      const darkNeighborCount = ALL_DIRECTIONS.filter(([dx, dy]) => {
+        const index = grid[y + dy]?.[x + dx]?.colorIndex ?? -1
+        return index >= 0 && getColorLuma(selectedPalette[index]?.hex ?? '#ffffff') <= CRAFT_DARK_LUMA_THRESHOLD
+      }).length
+      if (darkNeighborCount >= 1) {
+        placeCellIfUseful(next, selectedPalette, x, y, darkIndex)
+      }
+    }
+  }
+
+  return next
+}
+
 function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
   let next = cleanupCraftGrid(grid, selectedPalette)
   next = closeCraftSubjectGaps(next, selectedPalette)
   next = connectCraftDarkDetails(next, selectedPalette)
   next = reinforceTinyDarkFeatures(next, selectedPalette, longSide)
+  next = strengthen36FacialFeatures(next, selectedPalette, longSide)
+  next = ensure36MouthStroke(next, selectedPalette, longSide)
+  next = thicken36OuterSilhouette(next, selectedPalette, longSide)
   next = cleanupCraftGrid(next, selectedPalette)
   next = removeTinyDetachedCraftIslands(next)
   recountPalette(next, selectedPalette)
@@ -1222,7 +1500,9 @@ function App() {
     setError('')
     setIsAiGenerating(true)
     try {
-      const size = await pickAgnesSize(refFile, shape)
+      const patternShape = gridSize <= 40 && aiStyleId === DEFAULT_AI_STYLE_ID ? 'square' : shape
+      if (patternShape !== shape) setShape(patternShape)
+      const size = await pickAgnesSize(refFile, patternShape)
       const aiFile = await generateAgnesImage({
         file: refFile,
         styleId: aiStyleId,
@@ -1232,7 +1512,7 @@ function App() {
       })
       const framedFile = await cropToReferenceFraming(aiFile, refFile)
       const croppedFile = await cropSubjectFromImage(framedFile)
-      await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
+      await generatePattern(croppedFile, gridSize, maxColors, patternShape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
         quantizeMode: 'craft',
@@ -1293,7 +1573,8 @@ function App() {
   function switchSourceMode(mode: SourceMode) {
     setSourceMode(mode)
     if (mode === 'ai') {
-      setGridSize((current) => (current > AI_GRID_RECOMMEND_MAX ? AI_DEFAULT_GRID_SIZE : current))
+      setGridSize((current) => (!pattern.length && !sourcePreview ? AI_DEFAULT_GRID_SIZE : (current > AI_GRID_RECOMMEND_MAX ? AI_DEFAULT_GRID_SIZE : current)))
+      if (!pattern.length && !sourcePreview) setShape('square')
     }
   }
 
@@ -1401,7 +1682,7 @@ function App() {
           <label>
             <span>
               图纸尺寸 <b>最长边 {gridSize} 格</b>
-              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐 32–56 格，会自动收紧实际颜色数' : ''}</small>
+              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐 36–56 格，会自动收紧实际颜色数' : ''}</small>
             </span>
             <input type="range" min="24" max="128" step="4" value={gridSize} onChange={(event) => {
               const value = Number(event.target.value)
@@ -1444,7 +1725,7 @@ function App() {
 
           <div className="segmented">
             <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
-            <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
+            <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 居中裁剪</button>
           </div>
 
           <div className="segmented">
