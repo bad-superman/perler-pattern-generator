@@ -3,6 +3,7 @@ import { chromium } from 'playwright'
 import {
   AI_SVG,
   ANIMAL_AI_SVG,
+  BROW_CONFUSION_AI_SVG,
   DETACHED_BODY_AI_SVG,
   FAR_DECORATION_AI_SVG,
   FRAGILE_AI_SVG,
@@ -440,6 +441,7 @@ async function main() {
     { label: 'pastel-low-contrast', svg: PASTEL_LOW_CONTRAST_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-pastel-low-contrast.png') },
     { label: 'muted-features', svg: MUTED_FEATURES_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-muted-features.png') },
     { label: 'tiny-nearby-details', svg: TINY_NEARBY_DETAILS_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-tiny-nearby-details.png') },
+    { label: 'brow-confusion', svg: BROW_CONFUSION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-brow-confusion.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
     { label: 'detached-body', svg: DETACHED_BODY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-detached-body.png') },
@@ -523,6 +525,17 @@ async function main() {
         && result.eyes.right.height >= 2
         && result.eyeCore.left.readable
         && result.eyeCore.right.readable
+        && (
+          testCase.label !== 'brow-confusion'
+          || (
+            result.eyeCore.left.local.count >= 8
+            && result.eyeCore.left.local.width >= 3
+            && result.eyeCore.left.local.height >= 3
+            && result.eyeCore.right.local.count >= 8
+            && result.eyeCore.right.local.width >= 3
+            && result.eyeCore.right.local.height >= 3
+          )
+        )
         && (
           testCase.label !== 'muted-features'
           || (

@@ -150,6 +150,22 @@ export const TINY_NEARBY_DETAILS_AI_SVG = `
   <ellipse cx="644" cy="548" rx="30" ry="20" fill="#ff93b9"/>
 </svg>`
 
+export const BROW_CONFUSION_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <rect x="360" y="670" width="304" height="238" rx="82" fill="#66ddff" stroke="#171118" stroke-width="24"/>
+  <ellipse cx="512" cy="448" rx="340" ry="350" fill="#7b4cff" stroke="#171118" stroke-width="28"/>
+  <ellipse cx="512" cy="492" rx="278" ry="304" fill="#ffd6bd" stroke="#171118" stroke-width="18"/>
+  <path d="M194 340 Q512 86 830 340 L786 420 Q512 320 238 420 Z" fill="#9a65ff" stroke="#171118" stroke-width="20"/>
+  <path d="M330 398 Q390 376 456 398" fill="none" stroke="#171118" stroke-width="14" stroke-linecap="round"/>
+  <path d="M568 398 Q634 376 696 398" fill="none" stroke="#171118" stroke-width="14" stroke-linecap="round"/>
+  <ellipse cx="404" cy="494" rx="10" ry="14" fill="#151015"/>
+  <ellipse cx="620" cy="494" rx="10" ry="14" fill="#151015"/>
+  <path d="M488 564 Q512 584 536 564" fill="none" stroke="#171118" stroke-width="8" stroke-linecap="round"/>
+  <ellipse cx="340" cy="548" rx="34" ry="22" fill="#ff90b9"/>
+  <ellipse cx="684" cy="548" rx="34" ry="22" fill="#ff90b9"/>
+</svg>`
+
 export const ANIMAL_AI_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#fffaf1"/>

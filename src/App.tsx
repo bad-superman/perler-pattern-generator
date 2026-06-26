@@ -65,7 +65,7 @@ const DEFAULT_AI_STYLE_ID = 'cute-chibi'
 const DEFAULT_AI_EXTRA_PROMPT = [
   '目标：36×36 也清晰完整的艳丽可爱 Q 版拼豆图纸。',
   '请主动把原图改造成糖果色 Q 版，不要照搬原图的灰暗颜色或写实光影。',
-  '五官和边缘要为小尺寸拼豆重画：3×3 左右的大眼睛、3-5 格的完整短嘴巴、连续粗轮廓、少色大色块。',
+  '五官和边缘要为小尺寸拼豆重画：3×3 左右的大眼睛、3-5 格的完整短嘴巴、连续粗轮廓、少色大色块；眼睛必须是独立深色块，不能被刘海、眉毛或外轮廓替代。',
 ].join(' ')
 
 function hexToRgb(hex: string) {
@@ -2193,11 +2193,23 @@ function ensure36EyePair(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
         const width = component.maxX - component.minX + 1
         const height = component.maxY - component.minY + 1
         const touchesSubjectSide = component.minX <= bounds.minX + 1 || component.maxX >= bounds.maxX - 1
+        const eyeLikeCompactness = height >= 3 && width >= 2 && width <= height + 3
+        const tooHighForEye = component.centerY < expectedEyeY - Math.max(2, Math.round(subjectH * 0.12))
+        const tooFarFromExpectedX = Math.abs(component.centerX - (left + right) / 2) > Math.max(4, Math.round(subjectW * 0.16))
+        const browLikeLine = width >= Math.max(5, height * 2) && height <= 3
         const tooLargeForEye = width > Math.max(6, Math.round(subjectW * 0.26))
           || height > Math.max(7, Math.round(subjectH * 0.25))
           || component.cells.length > 22
-        const distancePenalty = Math.abs(component.centerY - expectedEyeY) * 1.4
-        return component.cells.length - distancePenalty - (touchesSubjectSide ? 18 : 0) - (tooLargeForEye ? 28 : 0)
+        const distancePenalty = Math.abs(component.centerY - expectedEyeY) * 1.7
+          + Math.abs(component.centerX - (left + right) / 2) * 0.8
+        return component.cells.length
+          + (eyeLikeCompactness ? 10 : 0)
+          - distancePenalty
+          - (touchesSubjectSide ? 18 : 0)
+          - (tooLargeForEye ? 28 : 0)
+          - (tooHighForEye ? 24 : 0)
+          - (tooFarFromExpectedX ? 16 : 0)
+          - (browLikeLine ? 18 : 0)
       }
       return scoreComponent(b) - scoreComponent(a)
     })[0]
@@ -2215,10 +2227,15 @@ function ensure36EyePair(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
     const width = component.maxX - component.minX + 1
     const height = component.maxY - component.minY + 1
     const touchesSubjectSide = component.minX <= bounds.minX + 1 || component.maxX >= bounds.maxX - 1
+    const tooHighForEye = component.centerY < expectedEyeY - Math.max(2, Math.round(subjectH * 0.12))
+    const tooFarFromExpectedX = Math.abs(component.centerX - fallbackX) > Math.max(4, Math.round(subjectW * 0.16))
+    const browLikeLine = width >= Math.max(5, height * 2) && height <= 3
     const tooLargeForEye = width > Math.max(6, Math.round(subjectW * 0.26))
       || height > Math.max(7, Math.round(subjectH * 0.25))
       || component.cells.length > 22
-    if (touchesSubjectSide || tooLargeForEye) return { centerX: clamp(fallbackX, left, right), centerY: expectedEyeY }
+    if (touchesSubjectSide || tooLargeForEye || tooHighForEye || tooFarFromExpectedX || browLikeLine) {
+      return { centerX: clamp(fallbackX, left, right), centerY: expectedEyeY }
+    }
     return { centerX: component.centerX, centerY: component.centerY }
   }
 
