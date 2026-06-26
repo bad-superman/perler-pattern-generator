@@ -42,35 +42,52 @@ function cropCanvasToBounds(
   const { width, height } = source
   const contentW = bounds.maxX - bounds.minX + 1
   const contentH = bounds.maxY - bounds.minY + 1
-  if (contentW * contentH > width * height * 0.95) return null
 
   const padX = Math.max(1, Math.round(contentW * paddingRatio))
   const padY = Math.max(1, Math.round(contentH * paddingRatio))
-  let cropX = Math.max(0, bounds.minX - padX)
-  let cropY = Math.max(0, bounds.minY - padY)
-  let cropW = Math.min(width - cropX, contentW + padX * 2)
-  let cropH = Math.min(height - cropY, contentH + padY * 2)
+  let cropX = bounds.minX - padX
+  let cropY = bounds.minY - padY
+  let cropW = contentW + padX * 2
+  let cropH = contentH + padY * 2
 
   if (square) {
     const centerX = (bounds.minX + bounds.maxX) / 2
     const centerY = (bounds.minY + bounds.maxY) / 2
-    const cropSize = Math.min(
-      Math.max(cropW, cropH),
-      Math.min(width, height),
-    )
+    const cropSize = Math.max(cropW, cropH)
     cropW = cropSize
     cropH = cropSize
-    cropX = Math.min(width - cropW, Math.max(0, Math.round(centerX - cropW / 2)))
-    cropY = Math.min(height - cropH, Math.max(0, Math.round(centerY - cropH / 2)))
+    cropX = Math.round(centerX - cropW / 2)
+    cropY = Math.round(centerY - cropH / 2)
   }
 
   const cropped = document.createElement('canvas')
-  cropped.width = cropW
-  cropped.height = cropH
+  cropped.width = Math.max(1, Math.round(cropW))
+  cropped.height = Math.max(1, Math.round(cropH))
   const croppedCtx = cropped.getContext('2d')
   if (!croppedCtx) return null
 
-  croppedCtx.drawImage(source, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+  croppedCtx.fillStyle = '#fffaf1'
+  croppedCtx.fillRect(0, 0, cropped.width, cropped.height)
+
+  const sourceX = Math.max(0, cropX)
+  const sourceY = Math.max(0, cropY)
+  const sourceRight = Math.min(width, cropX + cropW)
+  const sourceBottom = Math.min(height, cropY + cropH)
+  const sourceW = Math.max(0, sourceRight - sourceX)
+  const sourceH = Math.max(0, sourceBottom - sourceY)
+  if (!sourceW || !sourceH) return null
+
+  croppedCtx.drawImage(
+    source,
+    sourceX,
+    sourceY,
+    sourceW,
+    sourceH,
+    sourceX - cropX,
+    sourceY - cropY,
+    sourceW,
+    sourceH,
+  )
   return cropped
 }
 
@@ -234,7 +251,7 @@ export async function cropSubjectFromImage(file: File, options: { square?: boole
   const initialBounds = primaryBounds ?? findContentBounds(canvas.width, canvas.height, initialData.data)
   if (!initialBounds) return file
 
-  const paddingRatio = options.square ? 0.025 : 0.005
+  const paddingRatio = options.square ? 0.1 : 0.005
   let cropped = cropCanvasToBounds(canvas, initialBounds, paddingRatio, options.square ?? false)
   if (!cropped) return file
 

@@ -238,6 +238,16 @@ async function analyzePattern(page) {
       }
     }
 
+    function edgeMarginStats() {
+      return {
+        left: minX,
+        top: minY,
+        right: cols - 1 - maxX,
+        bottom: rows - 1 - maxY,
+        min: Math.min(minX, minY, cols - 1 - maxX, rows - 1 - maxY),
+      }
+    }
+
     function outlineStats() {
       const exterior = new Uint8Array(cols * rows)
       const queue = []
@@ -375,6 +385,7 @@ async function analyzePattern(page) {
     const activeComponents = componentStats(active)
     const holes = enclosedHoleStats()
     const outline = outlineStats()
+    const edgeMargin = edgeMarginStats()
     const mouthCenter = windowStats(
       Math.max(mouthLeft, centerX - 3),
       mouthTop,
@@ -391,6 +402,7 @@ async function analyzePattern(page) {
         activeComponents,
         holes,
         outline,
+        edgeMargin,
         fillRatio: activeCount ? activeCount / Math.max(1, subjectW * subjectH) : 0,
       },
       colorBalance: {
@@ -482,6 +494,7 @@ async function main() {
         && result.integrity.activeComponents.largestRatio >= 0.96
         && result.integrity.holes.count <= 2
         && result.integrity.holes.totalArea <= Math.max(4, Math.round(result.colorBalance.activeCount * 0.015))
+        && result.integrity.edgeMargin.min >= 1
         && result.integrity.outline.darkBoundaryRatio >= (testCase.label === 'pastel-low-contrast' ? 0.24 : 0.18)
         && result.integrity.outline.vividBoundaryRatio <= 0.72
         && result.colorBalance.darkRatio <= 0.78
