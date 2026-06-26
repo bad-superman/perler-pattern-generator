@@ -13,6 +13,7 @@ import {
   REF_SVG,
   SMALL_OFFCENTER_AI_SVG,
   TEXTURED_REALISTIC_AI_SVG,
+  TINY_NEARBY_DETAILS_AI_SVG,
   parseRgb,
   startDevServerIfNeeded,
   stopDevServer,
@@ -438,6 +439,7 @@ async function main() {
     { label: 'far-decoration', svg: FAR_DECORATION_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-far-decoration.png') },
     { label: 'pastel-low-contrast', svg: PASTEL_LOW_CONTRAST_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-pastel-low-contrast.png') },
     { label: 'muted-features', svg: MUTED_FEATURES_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-muted-features.png') },
+    { label: 'tiny-nearby-details', svg: TINY_NEARBY_DETAILS_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-tiny-nearby-details.png') },
     { label: 'animal', svg: ANIMAL_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-animal.png') },
     { label: 'textured-realistic', svg: TEXTURED_REALISTIC_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-textured-realistic.png') },
     { label: 'detached-body', svg: DETACHED_BODY_AI_SVG, screenshot: path.join(OUT_DIR, 'verify-36-detached-body.png') },
@@ -497,6 +499,13 @@ async function main() {
         && result.legendCount <= 7
         && (testCase.label !== 'textured-realistic' || result.legendCount <= 5)
         && (testCase.label !== 'far-decoration' || result.bounds.subjectW <= 28)
+        && (
+          testCase.label !== 'tiny-nearby-details'
+          || (
+            result.bounds.subjectW >= 28
+            && result.colorBalance.activeCount >= 560
+          )
+        )
         && result.integrity.activeComponents.significantCount <= 1
         && result.integrity.activeComponents.largestRatio >= 0.96
         && result.integrity.holes.count <= 2

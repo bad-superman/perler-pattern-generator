@@ -1670,6 +1670,60 @@ function connect36NearSubjectComponents(grid: BeadCell[][], selectedPalette: Pal
   return next
 }
 
+function connect36TinyNearbyDetails(grid: BeadCell[][], selectedPalette: PaletteColor[], longSide: number) {
+  if (longSide > 40) return grid
+  const next = cloneGrid(grid)
+
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    const components = getActiveComponents(next).sort((a, b) => b.cells.length - a.cells.length)
+    if (components.length <= 1) return next
+
+    const main = components[0]
+    const mainW = main.maxX - main.minX + 1
+    const mainH = main.maxY - main.minY + 1
+    const maxTinySize = Math.max(4, Math.round(main.cells.length * 0.01))
+    const maxBridgeCells = 2
+    let changed = false
+
+    for (const component of components.slice(1)) {
+      if (component.cells.length < 2 || component.cells.length > maxTinySize) continue
+
+      const gap = getActiveComponentGap(main, component)
+      if (gap < 1 || gap > maxBridgeCells) continue
+
+      const overlapsMainX = component.maxX >= main.minX - 2 && component.minX <= main.maxX + 2
+      const overlapsMainY = component.maxY >= main.minY - 2 && component.minY <= main.maxY + 2
+      const closeToMainFrame = component.centerX >= main.minX - Math.max(3, Math.round(mainW * 0.12))
+        && component.centerX <= main.maxX + Math.max(3, Math.round(mainW * 0.12))
+        && component.centerY >= main.minY - Math.max(3, Math.round(mainH * 0.12))
+        && component.centerY <= main.maxY + Math.max(3, Math.round(mainH * 0.12))
+      if (!closeToMainFrame || (!overlapsMainX && !overlapsMainY)) continue
+
+      const closest = findClosestActiveCells(component.cells, main.cells)
+      if (!closest) continue
+      const missingCells = Math.max(0, closest.distance - 1)
+      if (missingCells < 1 || missingCells > maxBridgeCells) continue
+
+      const path = getBridgePath(next, closest.from, closest.to)
+      if (!path.length || path.length > maxBridgeCells) continue
+      if (path.some(([x, y]) => getBridgeSupportScore(next, x, y) < 1)) continue
+
+      const fallbackIndex = next[closest.from[1]]?.[closest.from[0]]?.colorIndex ?? -1
+      path.forEach(([x, y]) => {
+        const fillIndex = getBridgeFillIndex(next, selectedPalette, x, y, fallbackIndex)
+        if (fillIndex < 0) return
+        placeCellIfUseful(next, selectedPalette, x, y, fillIndex)
+        changed = true
+      })
+    }
+
+    if (!changed) return next
+  }
+
+  recountPalette(next, selectedPalette)
+  return next
+}
+
 function findSubjectBounds(grid: BeadCell[][]) {
   const rows = grid.length
   const cols = grid[0]?.length ?? 0
@@ -2448,6 +2502,7 @@ function polishCraftGrid(grid: BeadCell[][], selectedPalette: PaletteColor[], lo
   next = cleanupCraftGrid(next, selectedPalette)
   next = merge36SimilarMinorShades(next, selectedPalette, longSide)
   next = merge36TinyColorSpeckles(next, selectedPalette, longSide)
+  next = connect36TinyNearbyDetails(next, selectedPalette, longSide)
   next = removeTinyDetachedCraftIslands(next)
   recountPalette(next, selectedPalette)
   return next

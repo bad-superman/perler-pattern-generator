@@ -132,6 +132,24 @@ export const MUTED_FEATURES_AI_SVG = `
   <path d="M420 684 L604 684" stroke="#8e6f87" stroke-width="7" stroke-linecap="round"/>
 </svg>`
 
+export const TINY_NEARBY_DETAILS_AI_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#fffaf1"/>
+  <rect x="382" y="680" width="260" height="220" rx="78" fill="#58d8ff" stroke="#171118" stroke-width="24"/>
+  <ellipse cx="512" cy="462" rx="232" ry="286" fill="#ff70c8" stroke="#171118" stroke-width="26"/>
+  <ellipse cx="512" cy="490" rx="184" ry="240" fill="#ffd5bd" stroke="#171118" stroke-width="20"/>
+  <path d="M310 370 Q512 150 714 370 L686 424 Q512 332 338 424 Z" fill="#a65cff" stroke="#171118" stroke-width="16"/>
+  <circle cx="234" cy="468" r="38" fill="#ff70c8" stroke="#171118" stroke-width="18"/>
+  <circle cx="790" cy="468" r="38" fill="#ff70c8" stroke="#171118" stroke-width="18"/>
+  <ellipse cx="432" cy="474" rx="24" ry="34" fill="#151015"/>
+  <ellipse cx="592" cy="474" rx="24" ry="34" fill="#151015"/>
+  <ellipse cx="440" cy="462" rx="7" ry="9" fill="#ffffff"/>
+  <ellipse cx="600" cy="462" rx="7" ry="9" fill="#ffffff"/>
+  <path d="M480 562 Q512 588 544 562" fill="none" stroke="#171118" stroke-width="9" stroke-linecap="round"/>
+  <ellipse cx="380" cy="548" rx="30" ry="20" fill="#ff93b9"/>
+  <ellipse cx="644" cy="548" rx="30" ry="20" fill="#ff93b9"/>
+</svg>`
+
 export const ANIMAL_AI_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#fffaf1"/>
