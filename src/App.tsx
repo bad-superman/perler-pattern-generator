@@ -680,7 +680,7 @@ function App() {
     setIsAiGenerating(true)
     try {
       const size = await pickAgnesSize(refFile, shape)
-      const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize)
+      const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
       if (debugMode) {
         setDebugPrompt(prompt)
         clearDebugAiImage()
@@ -690,6 +690,7 @@ function App() {
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
         gridSize,
+        maxColors,
         size,
         prompt,
       })
