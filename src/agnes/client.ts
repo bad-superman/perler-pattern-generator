@@ -6,6 +6,7 @@ interface GenerateAgnesImageOptions {
   extraPrompt?: string
   gridSize?: number
   size?: string
+  prompt?: string
 }
 
 interface AgnesGenerateResponse {
@@ -33,7 +34,7 @@ async function responseToFile(payload: AgnesGenerateResponse, styleId: string): 
 }
 
 export async function generateAgnesImage(options: GenerateAgnesImageOptions): Promise<File> {
-  const prompt = buildAgnesPrompt(options.styleId, options.extraPrompt, options.gridSize)
+  const prompt = options.prompt ?? buildAgnesPrompt(options.styleId, options.extraPrompt, options.gridSize)
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('styleId', options.styleId)

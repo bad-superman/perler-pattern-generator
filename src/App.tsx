@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCirc
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
-import { AGNES_STYLE_PRESETS } from './agnes/styles'
+import { AGNES_STYLE_PRESETS, buildAgnesPrompt } from './agnes/styles'
 import {
   DEFAULT_PALETTE_BRAND,
   getPalette,
@@ -33,15 +33,23 @@ type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
-const DEFAULT_GRID_SIZE = 48
+const DEFAULT_GRID_SIZE = 52
 const EMPTY_CELL_HEX = '#fffaf1'
-const AI_DEFAULT_GRID_SIZE = 48
+const AI_DEFAULT_GRID_SIZE = 52
 const AI_GRID_RECOMMEND_MAX = 56
 const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
 const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
-const QUICK_GRID_SIZES = [32, 48, 64, 96] as const
+const QUICK_GRID_SIZES = [52, 104, 156, 208] as const
+const GUIDE_BLOCK_SIZE = 5
+
+function readDebugModeFromUrl() {
+  if (typeof window === 'undefined') return false
+  const value = new URLSearchParams(window.location.search).get('debug')
+  if (value === null) return false
+  return !['0', 'false', 'off', 'no'].includes(value.trim().toLowerCase())
+}
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '')
@@ -301,6 +309,48 @@ function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png') {
   })
 }
 
+function drawExportGuideLines(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  cellSize: number,
+  gap: number,
+  cols: number,
+  rows: number,
+) {
+  if (cols <= GUIDE_BLOCK_SIZE && rows <= GUIDE_BLOCK_SIZE) return
+
+  const lines: Array<[number, number, number, number]> = []
+  for (let col = GUIDE_BLOCK_SIZE; col < cols; col += GUIDE_BLOCK_SIZE) {
+    const guideX = x + col * cellSize + (col - 0.5) * gap
+    lines.push([guideX, y, guideX, y + height])
+  }
+  for (let row = GUIDE_BLOCK_SIZE; row < rows; row += GUIDE_BLOCK_SIZE) {
+    const guideY = y + row * cellSize + (row - 0.5) * gap
+    lines.push([x, guideY, x + width, guideY])
+  }
+  if (!lines.length) return
+
+  const strokeLines = (lineWidth: number, strokeStyle: string) => {
+    ctx.beginPath()
+    ctx.lineWidth = lineWidth
+    ctx.strokeStyle = strokeStyle
+    ctx.lineCap = 'butt'
+    lines.forEach(([x1, y1, x2, y2]) => {
+      ctx.moveTo(x1, y1)
+      ctx.lineTo(x2, y2)
+    })
+    ctx.stroke()
+  }
+
+  ctx.save()
+  strokeLines(3, 'rgba(255, 255, 255, 0.78)')
+  strokeLines(1, 'rgba(29, 26, 35, 0.78)')
+  ctx.restore()
+}
+
 function buildPatternExportCanvas(
   pattern: BeadCell[][],
   palette: PaletteColor[],
@@ -358,7 +408,26 @@ function buildPatternExportCanvas(
       const py = gridY + gridPad + y * (exportCell + gap)
       ctx.fillStyle = cell.hex
       ctx.fillRect(px, py, exportCell, exportCell)
-      if (renderMode === 'symbols' && cell.colorIndex >= 0) {
+    }
+  }
+  drawExportGuideLines(
+    ctx,
+    gridX + gridPad,
+    gridY + gridPad,
+    gridInnerW,
+    gridInnerH,
+    exportCell,
+    gap,
+    gridCols,
+    gridRows,
+  )
+  if (renderMode === 'symbols') {
+    for (let y = 0; y < gridRows; y += 1) {
+      for (let x = 0; x < gridCols; x += 1) {
+        const cell = pattern[y][x]
+        if (cell.colorIndex < 0) continue
+        const px = gridX + gridPad + x * (exportCell + gap)
+        const py = gridY + gridPad + y * (exportCell + gap)
         ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
         ctx.font = `700 ${Math.max(8, Math.floor(exportCell * 0.55))}px "Noto Sans SC", sans-serif`
         ctx.textAlign = 'center'
@@ -434,11 +503,15 @@ function App() {
   const [isExporting, setIsExporting] = useState(false)
   const [exportNotice, setExportNotice] = useState('')
   const [error, setError] = useState('')
+  const [debugMode, setDebugMode] = useState(readDebugModeFromUrl)
+  const [debugPrompt, setDebugPrompt] = useState('')
+  const [debugAiImageUrl, setDebugAiImageUrl] = useState('')
   const patternRef = useRef<HTMLDivElement>(null)
   const paperViewportRef = useRef<HTMLDivElement>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const lastSourceFileRef = useRef<File | null>(null)
   const exportNoticeTimerRef = useRef<number | null>(null)
+  const debugAiImageUrlRef = useRef('')
   const [paperScale, setPaperScale] = useState(1)
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
@@ -477,7 +550,27 @@ function App() {
 
   useEffect(() => () => {
     if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
+    if (debugAiImageUrlRef.current) URL.revokeObjectURL(debugAiImageUrlRef.current)
   }, [])
+
+  useEffect(() => {
+    const syncDebugMode = () => setDebugMode(readDebugModeFromUrl())
+    window.addEventListener('popstate', syncDebugMode)
+    return () => window.removeEventListener('popstate', syncDebugMode)
+  }, [])
+
+  function updateDebugAiImage(file: File) {
+    if (debugAiImageUrlRef.current) URL.revokeObjectURL(debugAiImageUrlRef.current)
+    const url = URL.createObjectURL(file)
+    debugAiImageUrlRef.current = url
+    setDebugAiImageUrl(url)
+  }
+
+  function clearDebugAiImage() {
+    if (debugAiImageUrlRef.current) URL.revokeObjectURL(debugAiImageUrlRef.current)
+    debugAiImageUrlRef.current = ''
+    setDebugAiImageUrl('')
+  }
 
 
   async function generatePattern(
@@ -587,13 +680,20 @@ function App() {
     setIsAiGenerating(true)
     try {
       const size = await pickAgnesSize(refFile, shape)
+      const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize)
+      if (debugMode) {
+        setDebugPrompt(prompt)
+        clearDebugAiImage()
+      }
       const aiFile = await generateAgnesImage({
         file: refFile,
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
         gridSize,
         size,
+        prompt,
       })
+      if (debugMode) updateDebugAiImage(aiFile)
       const croppedFile = await cropSubjectFromImage(aiFile)
       await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
         updatePreview: false,
@@ -762,9 +862,9 @@ function App() {
           <label>
             <span>
               图纸尺寸 <b>最长边 {gridSize} 格</b>
-              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐 32–56 格' : ''}</small>
+              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐约 52 格' : ''}</small>
             </span>
-            <input type="range" min="24" max="128" step="4" value={gridSize} onChange={(event) => {
+            <input type="range" min="24" max="208" step="4" value={gridSize} onChange={(event) => {
               const value = Number(event.target.value)
               setGridSize(value)
               void regenerate(value, maxColors, shape)
@@ -921,6 +1021,30 @@ function App() {
         <div className="export-toast" role="status" aria-live="polite">
           {exportNotice}
         </div>
+      )}
+
+      {debugMode && (
+        <details className="debug-panel" open>
+          <summary>AI 调试模式</summary>
+          <div className="debug-content">
+            <section>
+              <h2>AI 完整提示词</h2>
+              {debugPrompt ? (
+                <pre>{debugPrompt}</pre>
+              ) : (
+                <p>生成一次 AI 拼豆图后会显示本次请求使用的完整提示词。</p>
+              )}
+            </section>
+            <section>
+              <h2>AI 生成原图</h2>
+              {debugAiImageUrl ? (
+                <img src={debugAiImageUrl} alt="AI 生成原图（裁切前）" />
+              ) : (
+                <p>生成完成后会显示裁切和量化前的 AI 原图。</p>
+              )}
+            </section>
+          </div>
+        </details>
       )}
 
       <footer className="site-footer">
