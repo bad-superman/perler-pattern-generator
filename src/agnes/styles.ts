@@ -19,7 +19,7 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
     id: 'cute-chibi',
     label: '可爱 Q 版',
     description: '圆润造型，明亮 pastel 配色',
-    promptSuffix: '可爱 Q 版像素画风格，造型圆润，明亮柔和配色，卡哇伊视觉，使用近景头像或半身构图，让角色填充大部分画面',
+    promptSuffix: 'chibi 像素画风格，头身比夸张，头大身小，造型圆润可爱，明亮柔和 pastel 配色，卡哇伊视觉，使用近景头像或半身构图，让角色填充大部分画面',
   },
   {
     id: 'flat-minimal',
