@@ -87,12 +87,9 @@ async function loadImage(file: File): Promise<HTMLImageElement> {
   })
 }
 
-function fitGridToImage(image: HTMLImageElement, longSide: number, shape: BoardShape) {
-  if (shape === 'square') return { cols: longSide, rows: longSide }
-  if (image.width >= image.height) {
-    return { cols: longSide, rows: Math.max(1, Math.round((longSide * image.height) / image.width)) }
-  }
-  return { cols: Math.max(1, Math.round((longSide * image.width) / image.height)), rows: longSide }
+function fitGridToImage(image: HTMLImageElement, width: number, shape: BoardShape) {
+  if (shape === 'square') return { cols: width, rows: width }
+  return { cols: width, rows: Math.max(1, Math.round((width * image.height) / Math.max(image.width, 1))) }
 }
 
 interface ImageDrawRect {
@@ -862,7 +859,7 @@ function App() {
 
           <label>
             <span>
-              图纸尺寸 <b>最长边 {gridSize} 格</b>
+              图纸宽度 <b>{gridSize} 格</b>
               <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐约 52 格' : ''}</small>
             </span>
             <input type="range" min="24" max="208" step="4" value={gridSize} onChange={(event) => {
@@ -870,7 +867,7 @@ function App() {
               setGridSize(value)
               void regenerate(value, maxColors, shape)
             }} />
-            <div className="quick-size-grid" aria-label="常用图纸尺寸">
+            <div className="quick-size-grid" aria-label="常用图纸宽度">
               {QUICK_GRID_SIZES.map((size) => (
                 <button
                   key={size}
@@ -935,7 +932,7 @@ function App() {
               <div>
                 <small>尺寸</small>
                 <strong>{gridCols} × {gridRows}</strong>
-                <span>按当前图纸尺寸生成</span>
+                <span>按当前宽度生成</span>
               </div>
               <div>
                 <small>豆数</small>
