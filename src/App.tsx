@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { AGNES_STYLE_PRESETS, buildAgnesPrompt } from './agnes/styles'
+import { ColorPickerStrip } from './components/ColorPickerStrip'
+import { ColorReplacePanel } from './components/ColorReplacePanel'
+import { EditablePatternGrid, type EditorTool } from './components/EditablePatternGrid'
+import { PatternEditorToolbar } from './components/PatternEditorToolbar'
+import { usePatternHistory } from './hooks/usePatternHistory'
+import {
+  applyStroke,
+  countCellsWithSymbol,
+  ensurePaletteColor,
+  recalculatePaletteCounts,
+  replaceColorGlobally,
+} from './pattern/ops'
+import { EMPTY_CELL_HEX, type BeadCell, type PaletteColor } from './pattern/types'
 import {
   DEFAULT_PALETTE_BRAND,
   getPalette,
@@ -14,27 +27,13 @@ import {
 } from './palettes'
 import './App.css'
 
-interface PaletteColor {
-  code: string
-  name: string
-  hex: string
-  count: number
-  symbol: string
-}
-
-interface BeadCell {
-  colorIndex: number
-  hex: string
-  symbol: string
-}
-
 type BoardShape = 'ratio' | 'square'
 type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai'
+type PreviewMode = 'view' | 'edit'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 const DEFAULT_GRID_SIZE = 52
-const EMPTY_CELL_HEX = '#fffaf1'
 const AI_DEFAULT_GRID_SIZE = 52
 const AI_GRID_RECOMMEND_MAX = 56
 const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
@@ -489,8 +488,23 @@ function App() {
   const [maxColors, setMaxColors] = useState(24)
   const [shape, setShape] = useState<BoardShape>('ratio')
   const [renderMode, setRenderMode] = useState<RenderMode>('symbols')
-  const [pattern, setPattern] = useState<BeadCell[][]>([])
-  const [palette, setPalette] = useState<PaletteColor[]>([])
+  const {
+    pattern,
+    palette,
+    reset: resetPatternHistory,
+    commit: commitPatternHistory,
+    undo: undoPatternEdit,
+    redo: redoPatternEdit,
+    canUndo,
+    canRedo,
+    setSnapshot: setPatternSnapshot,
+  } = usePatternHistory()
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('view')
+  const [editorTool, setEditorTool] = useState<EditorTool>('paint')
+  const [selectedPaletteIndex, setSelectedPaletteIndex] = useState(0)
+  const [showAllColors, setShowAllColors] = useState(false)
+  const [replaceFromSymbol, setReplaceFromSymbol] = useState('')
+  const [replaceToPaletteIndex, setReplaceToPaletteIndex] = useState(-1)
   const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
   const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
@@ -518,6 +532,29 @@ function App() {
   const activePaletteColors = useMemo(() => getPaletteColors(paletteBrand), [paletteBrand])
   const activePaletteSize = useMemo(() => getPaletteSize(paletteBrand), [paletteBrand])
   const gridSizeHint = useMemo(() => getGridSizeHint(gridSize), [gridSize])
+  const replaceAffectedCount = useMemo(
+    () => (replaceFromSymbol ? countCellsWithSymbol(pattern, replaceFromSymbol) : 0),
+    [pattern, replaceFromSymbol],
+  )
+
+  const isEditing = previewMode === 'edit' && pattern.length > 0
+  const activeSelectedPaletteIndex = palette.length
+    ? Math.min(Math.max(selectedPaletteIndex, 0), palette.length - 1)
+    : 0
+
+  useEffect(() => {
+    if (!isEditing) return undefined
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      const meta = event.metaKey || event.ctrlKey
+      if (!meta || key !== 'z') return
+      event.preventDefault()
+      if (event.shiftKey) redoPatternEdit()
+      else undoPatternEdit()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isEditing, undoPatternEdit, redoPatternEdit])
 
   useEffect(() => {
     if (!pattern.length) return undefined
@@ -646,8 +683,14 @@ function App() {
         grid.push(row)
       }
 
-      setPalette(selectedPalette.filter((color) => color.count > 0))
-      setPattern(grid)
+      resetPatternHistory({
+        pattern: grid,
+        palette: selectedPalette.filter((color) => color.count > 0),
+      })
+      setPreviewMode('view')
+      setReplaceFromSymbol('')
+      setReplaceToPaletteIndex(-1)
+      setSelectedPaletteIndex(0)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成失败，请换一张图片试试')
     } finally {
@@ -704,12 +747,60 @@ function App() {
     }
   }
 
+  function handleSelectPaletteColor(index: number) {
+    if (index < 0) {
+      const entry = activePaletteColors[-(index + 1)]
+      if (!entry) return
+      const { palette: nextPalette, index: paletteIndex } = ensurePaletteColor(palette, entry, SYMBOLS)
+      setPatternSnapshot({ pattern, palette: nextPalette })
+      setSelectedPaletteIndex(paletteIndex)
+      return
+    }
+    setSelectedPaletteIndex(index)
+  }
+
+  function handleStrokeComplete(cells: Array<{ x: number; y: number }>, paletteIndex: number | null) {
+    const nextPattern = applyStroke(pattern, palette, cells, paletteIndex)
+    commitPatternHistory({
+      pattern: nextPattern,
+      palette: recalculatePaletteCounts(nextPattern, palette),
+    })
+  }
+
+  function handleApplyColorReplace() {
+    if (!replaceFromSymbol || replaceToPaletteIndex < 0) return
+    commitPatternHistory(replaceColorGlobally(pattern, palette, replaceFromSymbol, replaceToPaletteIndex))
+    setReplaceFromSymbol('')
+    setReplaceToPaletteIndex(-1)
+    setEditorTool('paint')
+  }
+
+  function exitEditMode() {
+    setPreviewMode('view')
+    setEditorTool('paint')
+    setShowAllColors(false)
+    setReplaceFromSymbol('')
+    setReplaceToPaletteIndex(-1)
+  }
+
+  function enterEditMode() {
+    if (!pattern.length) return
+    setPreviewMode('edit')
+    setEditorTool('paint')
+    setError('')
+  }
+
   async function regenerate(
     nextGridSize = gridSize,
     nextMaxColors = maxColors,
     nextShape = shape,
     nextPaletteBrand = paletteBrand,
   ) {
+    if (previewMode === 'edit' && canUndo) {
+      const confirmed = window.confirm('重新生成将覆盖当前编辑，是否继续？')
+      if (!confirmed) return
+    }
+    exitEditMode()
     const file = lastSourceFileRef.current ?? uploadRef.current?.files?.[0]
     if (file) {
       await generatePattern(file, nextGridSize, nextMaxColors, nextShape, nextPaletteBrand, {
@@ -721,6 +812,10 @@ function App() {
 
   function switchPaletteBrand(brand: PaletteBrand) {
     if (brand === paletteBrand) return
+    if (previewMode === 'edit') {
+      setError('请先完成编辑，再切换色号品牌')
+      return
+    }
     const nextMaxColors = Math.min(maxColors, getPaletteSize(brand))
     setPaletteBrand(brand)
     setMaxColors(nextMaxColors)
@@ -802,7 +897,7 @@ function App() {
         </div>
       </section>
 
-      <section className="workspace">
+      <section className={`workspace ${isEditing ? 'editing' : ''}`}>
         <aside className="panel controls-panel">
           <div className="segmented mode-tabs">
             <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => switchSourceMode('local')} type="button">本地转换</button>
@@ -913,6 +1008,9 @@ function App() {
 
           <div className="action-grid">
             <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing || isAiGenerating}><RotateCcw size={17} /> 重新生成</button>
+            <button type="button" onClick={enterEditMode} disabled={!pattern.length || isEditing}>
+              <Pencil size={17} /> 编辑图纸
+            </button>
             <button type="button" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
               {isExporting ? <LoaderCircle className="spin-icon" size={17} /> : <Download size={17} />}
               {isExporting ? '导出中...' : '导出 PNG'}
@@ -921,10 +1019,16 @@ function App() {
           {error && <p className="error">{error}</p>}
         </aside>
 
-        <section className="panel preview-panel">
+        <section className={`panel preview-panel ${isEditing ? 'editing-active' : ''}`}>
           <div className="section-title">
-            <div><Grid3X3 size={18} /> 图纸预览</div>
+            <div><Grid3X3 size={18} /> {isEditing ? '图纸编辑' : '图纸预览'}</div>
             <span>{activeCells ? `${gridCols}×${gridRows} · ${activeCells} 颗豆 · ${palette.length} 色` : '等待上传'}</span>
+            {pattern.length > 0 && (
+              <div className="preview-mode-tabs">
+                <button type="button" className={previewMode === 'view' ? 'active' : ''} onClick={exitEditMode}>预览</button>
+                <button type="button" className={previewMode === 'edit' ? 'active' : ''} onClick={enterEditMode}>编辑</button>
+              </div>
+            )}
           </div>
 
           {pattern.length > 0 && (
@@ -952,24 +1056,40 @@ function App() {
             </div>
           )}
 
-          <div className="pattern-paper" ref={patternRef}>
+          <div className={`pattern-paper ${isEditing ? 'editing' : ''}`} ref={patternRef}>
             {pattern.length ? (
               <>
-                <div className="paper-header">
-                  <div>
-                    <strong>整体图纸</strong>
-                    <span>已缩放到当前区域，完整查看构图</span>
-                  </div>
-                  <b>{Math.round(paperScale * 100)}%</b>
-                </div>
-                <div className="paper-overview" ref={paperViewportRef}>
-                  <div
-                    className="print-pattern-wrap"
-                    style={{ ['--paper-scale' as string]: paperScale }}
-                  >
-                    {renderGrid()}
-                  </div>
-                </div>
+                {!isEditing ? (
+                  <>
+                    <div className="paper-header">
+                      <div>
+                        <strong>整体图纸</strong>
+                        <span>已缩放到当前区域，完整查看构图</span>
+                      </div>
+                      <b>{Math.round(paperScale * 100)}%</b>
+                    </div>
+                    <div className="paper-overview" ref={paperViewportRef}>
+                      <div
+                        className="print-pattern-wrap"
+                        style={{ ['--paper-scale' as string]: paperScale }}
+                      >
+                        {renderGrid()}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <EditablePatternGrid
+                    pattern={pattern}
+                    palette={palette}
+                    gridCols={gridCols}
+                    gridRows={gridRows}
+                    cellSize={cellSize}
+                    renderMode={renderMode}
+                    tool={editorTool}
+                    selectedPaletteIndex={activeSelectedPaletteIndex}
+                    onStrokeComplete={handleStrokeComplete}
+                  />
+                )}
                 <div className="legend">
                   {palette.map((color) => (
                     <div className="legend-item" key={color.symbol}>
@@ -979,6 +1099,39 @@ function App() {
                     </div>
                   ))}
                 </div>
+                {isEditing && (
+                  <div className="editor-dock">
+                    <PatternEditorToolbar
+                      tool={editorTool}
+                      canUndo={canUndo}
+                      canRedo={canRedo}
+                      onToolChange={setEditorTool}
+                      onUndo={undoPatternEdit}
+                      onRedo={redoPatternEdit}
+                      onExit={exitEditMode}
+                    />
+                    {editorTool === 'replace' ? (
+                      <ColorReplacePanel
+                        palette={palette}
+                        fromSymbol={replaceFromSymbol}
+                        toPaletteIndex={replaceToPaletteIndex}
+                        affectedCount={replaceAffectedCount}
+                        onFromSymbolChange={setReplaceFromSymbol}
+                        onToPaletteIndexChange={setReplaceToPaletteIndex}
+                        onApply={handleApplyColorReplace}
+                      />
+                    ) : (
+                      <ColorPickerStrip
+                        palette={palette}
+                        selectedPaletteIndex={activeSelectedPaletteIndex}
+                        brandColors={activePaletteColors}
+                        showAllColors={showAllColors}
+                        onSelect={handleSelectPaletteColor}
+                        onToggleAllColors={() => setShowAllColors((current) => !current)}
+                      />
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <div className="empty-state">
