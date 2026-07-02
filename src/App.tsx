@@ -829,7 +829,8 @@ function App() {
     const startedAt = Date.now()
     try {
       await document.fonts.ready
-      const canvas = buildPatternExportCanvas(pattern, palette, gridCols, gridRows, renderMode, activeCells)
+      const exportPalette = palette.filter((color) => color.count > 0)
+      const canvas = buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, renderMode, activeCells)
       const blob = await canvasToBlob(canvas)
       saveAs(blob, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)
       setExportNotice('PNG 已开始下载')
