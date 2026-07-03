@@ -12,6 +12,7 @@ import { usePatternHistory } from './hooks/usePatternHistory'
 import {
   applyStroke,
   countCellsWithSymbol,
+  createEmptyCell,
   ensurePaletteColor,
   recalculatePaletteCounts,
   replaceColorGlobally,
@@ -29,7 +30,7 @@ import './App.css'
 
 type BoardShape = 'ratio' | 'square'
 type RenderMode = 'symbols' | 'solid'
-type SourceMode = 'local' | 'ai'
+type SourceMode = 'local' | 'ai' | 'board'
 type PreviewMode = 'view' | 'edit'
 
 const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
@@ -41,6 +42,7 @@ const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
 const QUICK_GRID_SIZES = [52, 104, 156, 208] as const
+const BOARD_QUICK_SIZES = QUICK_GRID_SIZES
 const GUIDE_BLOCK_SIZE = 5
 
 function readDebugModeFromUrl() {
@@ -282,6 +284,24 @@ function formatLegendLabel(color: Pick<PaletteColor, 'code' | 'name'>) {
   return color.name ? `${color.code} ${color.name}` : color.code
 }
 
+function createBlankPattern(cols: number, rows: number): BeadCell[][] {
+  return Array.from({ length: rows }, () => (
+    Array.from({ length: cols }, () => createEmptyCell())
+  ))
+}
+
+function createBoardStarterPalette(brandColors: readonly BeadPaletteEntry[]): PaletteColor[] {
+  const starter = brandColors.find(([code, name]) => /黑|black/i.test(`${code} ${name}`)) ?? brandColors[0]
+  if (!starter) return []
+  return [{
+    code: starter[0],
+    name: starter[1],
+    hex: starter[2],
+    count: 0,
+    symbol: SYMBOLS[0],
+  }]
+}
+
 function sanitizeExportFilename(name: string) {
   const base = name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_').trim()
   return base.slice(0, 80) || 'pattern'
@@ -483,6 +503,7 @@ function App() {
   const [sourceName, setSourceName] = useState('')
   const [sourcePreview, setSourcePreview] = useState('')
   const [gridSize, setGridSize] = useState(DEFAULT_GRID_SIZE)
+  const [boardRowsInput, setBoardRowsInput] = useState(DEFAULT_GRID_SIZE)
   const [gridCols, setGridCols] = useState(DEFAULT_GRID_SIZE)
   const [gridRows, setGridRows] = useState(DEFAULT_GRID_SIZE)
   const [maxColors, setMaxColors] = useState(24)
@@ -700,6 +721,11 @@ function App() {
 
   async function handleFile(file?: File) {
     if (!file) return
+    if (sourceMode === 'board') {
+      setSourceMode('local')
+      await generatePattern(file)
+      return
+    }
     if (sourceMode === 'ai') {
       setSourceName(file.name)
       setSourcePreview(URL.createObjectURL(file))
@@ -785,6 +811,34 @@ function App() {
 
   function enterEditMode() {
     if (!pattern.length) return
+    setPreviewMode('edit')
+    setEditorTool('paint')
+    setError('')
+  }
+
+  function createBoardPattern() {
+    const cols = Math.max(1, Math.round(gridSize))
+    const rows = Math.max(1, Math.round(boardRowsInput))
+    if (pattern.length) {
+      const confirmed = window.confirm('创建新画板将清空当前图纸，是否继续？')
+      if (!confirmed) return
+    }
+
+    const nextPalette = createBoardStarterPalette(activePaletteColors)
+    resetPatternHistory({
+      pattern: createBlankPattern(cols, rows),
+      palette: nextPalette,
+    })
+    setGridCols(cols)
+    setGridRows(rows)
+    setSourceName(`手绘画板-${cols}x${rows}`)
+    setSourcePreview('')
+    lastSourceFileRef.current = null
+    setSelectedPaletteIndex(0)
+    setShowAllColors(true)
+    setReplaceFromSymbol('')
+    setReplaceToPaletteIndex(-1)
+    setRenderMode('symbols')
     setPreviewMode('edit')
     setEditorTool('paint')
     setError('')
@@ -880,10 +934,11 @@ function App() {
         <div className="hero-copy">
           <div className="eyebrow"><Sparkles size={16} /> Perler Beads Pattern Maker</div>
           <h1>上传图片，一键生成可打印拼豆图纸</h1>
-          <p>支持本地转换与 AI 创作两种方式：上传图片后可直接量化，或由 AI 生成更适合拼豆的中间图。</p>
+          <p>支持本地转换、AI 创作与空白画板：上传图片可直接量化，也可以从指定尺寸开始手动绘制拼豆图纸。</p>
           <div className="hero-actions">
-            <button className="primary-btn" type="button" onClick={() => uploadRef.current?.click()}>
-              <ImageUp size={18} /> 上传图片
+            <button className="primary-btn" type="button" onClick={() => sourceMode === 'board' ? createBoardPattern() : uploadRef.current?.click()}>
+              {sourceMode === 'board' ? <Pencil size={18} /> : <ImageUp size={18} />}
+              {sourceMode === 'board' ? '创建画板' : '上传图片'}
             </button>
             <button className="ghost-btn" type="button" onClick={() => window.print()} disabled={!pattern.length}>
               <Printer size={18} /> 打印图纸
@@ -900,17 +955,47 @@ function App() {
 
       <section className={`workspace ${isEditing ? 'editing' : ''}`}>
         <aside className="panel controls-panel">
-          <div className="segmented mode-tabs">
+          <div className="segmented mode-tabs source-mode-tabs">
             <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => switchSourceMode('local')} type="button">本地转换</button>
             <button className={sourceMode === 'ai' ? 'active' : ''} onClick={() => switchSourceMode('ai')} type="button">AI 生成</button>
+            <button className={sourceMode === 'board' ? 'active' : ''} onClick={() => switchSourceMode('board')} type="button">画板绘制</button>
           </div>
 
           <input ref={uploadRef} type="file" accept="image/*" hidden onChange={(event) => void handleFile(event.target.files?.[0])} />
-          <button className="upload-zone" type="button" onClick={() => uploadRef.current?.click()}>
-            {sourcePreview ? <img src={sourcePreview} alt="上传预览" /> : <ImageUp size={34} />}
-            <span>{sourcePreview ? sourceName : '选择一张图片'}</span>
-            <small>{sourceMode === 'ai' ? '上传参考图，AI 将聚焦主体并简化背景' : '按原图比例完整预览，不裁切'}</small>
-          </button>
+          {sourceMode !== 'board' ? (
+            <button className="upload-zone" type="button" onClick={() => uploadRef.current?.click()}>
+              {sourcePreview ? <img src={sourcePreview} alt="上传预览" /> : <ImageUp size={34} />}
+              <span>{sourcePreview ? sourceName : '选择一张图片'}</span>
+              <small>{sourceMode === 'ai' ? '上传参考图，AI 将聚焦主体并简化背景' : '按原图比例完整预览，不裁切'}</small>
+            </button>
+          ) : (
+            <div className="board-panel">
+              <div className="board-panel-head">
+                <strong>空白画板</strong>
+                <span>选择宽高后进入编辑器，像素格就是拼豆位置</span>
+              </div>
+              <label>
+                <span>画板高度 <b>{boardRowsInput} 格</b></span>
+                <input type="range" min="8" max="208" step="1" value={boardRowsInput} onChange={(event) => setBoardRowsInput(Number(event.target.value))} />
+              </label>
+              <div className="board-size-presets" aria-label="常用画板高度">
+                {BOARD_QUICK_SIZES.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    className={boardRowsInput === size ? 'active' : ''}
+                    onClick={() => setBoardRowsInput(size)}
+                  >
+                    {size} 格
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="primary-btn board-create-btn" onClick={createBoardPattern}>
+                <Pencil size={18} /> 创建并开始绘制
+              </button>
+              <small>进入画板后可使用画笔、橡皮、移动、撤销/重做和批量换色。</small>
+            </div>
+          )}
 
           {sourceMode === 'ai' && (
             <div className="ai-panel">
@@ -955,15 +1040,15 @@ function App() {
 
           <label>
             <span>
-              图纸宽度 <b>{gridSize} 格</b>
-              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐约 52 格' : ''}</small>
+              {sourceMode === 'board' ? '画板宽度' : '图纸宽度'} <b>{gridSize} 格</b>
+              <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐约 52 格' : ''}{sourceMode === 'board' ? '；创建后可手动绘制' : ''}</small>
             </span>
             <input type="range" min="24" max="208" step="4" value={gridSize} onChange={(event) => {
               const value = Number(event.target.value)
               setGridSize(value)
-              void regenerate(value, maxColors, shape)
+              if (sourceMode !== 'board') void regenerate(value, maxColors, shape)
             }} />
-            <div className="quick-size-grid" aria-label="常用图纸宽度">
+            <div className="quick-size-grid" aria-label={sourceMode === 'board' ? '常用画板宽度' : '常用图纸宽度'}>
               {QUICK_GRID_SIZES.map((size) => (
                 <button
                   key={size}
@@ -971,7 +1056,7 @@ function App() {
                   className={gridSize === size ? 'active' : ''}
                   onClick={() => {
                     setGridSize(size)
-                    void regenerate(size, maxColors, shape)
+                    if (sourceMode !== 'board') void regenerate(size, maxColors, shape)
                   }}
                 >
                   {size} 格
@@ -988,19 +1073,23 @@ function App() {
             </div>
           </label>
 
-          <label>
-            <span>最大颜色数 <b>{maxColors}</b></span>
-            <input type="range" min="4" max={activePaletteSize} step="1" value={maxColors} onChange={(event) => {
-              const value = Number(event.target.value)
-              setMaxColors(value)
-              void regenerate(gridSize, value, shape)
-            }} />
-          </label>
+          {sourceMode !== 'board' && (
+            <>
+              <label>
+                <span>最大颜色数 <b>{maxColors}</b></span>
+                <input type="range" min="4" max={activePaletteSize} step="1" value={maxColors} onChange={(event) => {
+                  const value = Number(event.target.value)
+                  setMaxColors(value)
+                  void regenerate(gridSize, value, shape)
+                }} />
+              </label>
 
-          <div className="segmented">
-            <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
-            <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
-          </div>
+              <div className="segmented">
+                <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
+                <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
+              </div>
+            </>
+          )}
 
           <div className="segmented">
             <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">符号图纸</button>
@@ -1008,7 +1097,11 @@ function App() {
           </div>
 
           <div className="action-grid">
-            <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing || isAiGenerating}><RotateCcw size={17} /> 重新生成</button>
+            {sourceMode === 'board' ? (
+              <button type="button" onClick={createBoardPattern}><RotateCcw size={17} /> 新建画板</button>
+            ) : (
+              <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing || isAiGenerating}><RotateCcw size={17} /> 重新生成</button>
+            )}
             <button type="button" onClick={enterEditMode} disabled={!pattern.length || isEditing}>
               <Pencil size={17} /> 编辑图纸
             </button>
@@ -1023,7 +1116,7 @@ function App() {
         <section className={`panel preview-panel ${isEditing ? 'editing-active' : ''}`}>
           <div className="section-title">
             <div><Grid3X3 size={18} /> {isEditing ? '图纸编辑' : '图纸预览'}</div>
-            <span>{activeCells ? `${gridCols}×${gridRows} · ${activeCells} 颗豆 · ${palette.length} 色` : '等待上传'}</span>
+            <span>{pattern.length ? `${gridCols}×${gridRows} · ${activeCells} 颗豆 · ${palette.length} 色` : (sourceMode === 'board' ? '等待创建画板' : '等待上传')}</span>
             {pattern.length > 0 && (
               <div className="preview-mode-tabs">
                 <button type="button" className={previewMode === 'view' ? 'active' : ''} onClick={exitEditMode}>预览</button>
@@ -1136,9 +1229,9 @@ function App() {
               </>
             ) : (
               <div className="empty-state">
-                <Info size={38} />
-                <h2>从一张图开始</h2>
-                <p>这里会生成类似拼豆图纸的编号网格：每个格子代表一颗豆，底部清单统计每种颜色需要的数量。</p>
+                {sourceMode === 'board' ? <Pencil size={38} /> : <Info size={38} />}
+                <h2>{sourceMode === 'board' ? '创建空白画板' : '从一张图开始'}</h2>
+                <p>{sourceMode === 'board' ? '选择宽高后创建画板，使用画笔和色卡手动绘制每一颗拼豆。' : '这里会生成类似拼豆图纸的编号网格：每个格子代表一颗豆，底部清单统计每种颜色需要的数量。'}</p>
               </div>
             )}
           </div>

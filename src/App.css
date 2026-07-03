@@ -392,9 +392,17 @@ h1 {
   padding: 0 10px;
 }
 
+.action-grid button:last-child:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
 .mode-tabs {
   margin-top: 0;
   margin-bottom: 14px;
+}
+
+.source-mode-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .ai-panel {
@@ -482,6 +490,66 @@ h1 {
 }
 
 .ai-generate-btn {
+  width: 100%;
+  min-height: 48px;
+}
+
+.board-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px dashed rgba(23, 19, 31, 0.18);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 250, 241, 0.68)),
+    radial-gradient(circle at top right, rgba(84, 212, 160, 0.16), transparent 44%);
+}
+
+.board-panel-head {
+  display: grid;
+  gap: 4px;
+}
+
+.board-panel-head strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.board-panel-head span,
+.board-panel small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.board-panel label {
+  margin-top: 0;
+}
+
+.board-size-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.board-size-presets button {
+  min-height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.board-size-presets button.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--mint), var(--accent));
+}
+
+.board-create-btn {
   width: 100%;
   min-height: 48px;
 }
