@@ -4,10 +4,7 @@ import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { AGNES_STYLE_PRESETS, buildAgnesPrompt } from './agnes/styles'
-import { ColorPickerStrip } from './components/ColorPickerStrip'
-import { ColorReplacePanel } from './components/ColorReplacePanel'
-import { EditablePatternGrid, type EditorTool } from './components/EditablePatternGrid'
-import { PatternEditorToolbar } from './components/PatternEditorToolbar'
+import { PatternEditor, type EditorTool } from './components/PatternEditor'
 import { usePatternHistory } from './hooks/usePatternHistory'
 import {
   applyStroke,
@@ -1193,51 +1190,34 @@ function App() {
                   </div>
                 </>
               ) : (
-                <div className="pattern-editor-layout">
-                  <EditablePatternGrid
-                    pattern={pattern}
-                    gridCols={gridCols}
-                    gridRows={gridRows}
-                    cellSize={cellSize}
-                    renderMode={renderMode}
-                    tool={editorTool}
-                    selectedPaletteIndex={activeSelectedPaletteIndex}
-                    onStrokeComplete={handleStrokeComplete}
-                  />
-                  <div className="editor-dock">
-                    <PatternEditorToolbar
-                      tool={editorTool}
-                      selectedColor={palette[activeSelectedPaletteIndex]}
-                      colorPickerOpen={isColorPickerOpen}
-                      canUndo={canUndo}
-                      canRedo={canRedo}
-                      onColorPickerToggle={toggleColorPicker}
-                      onToolChange={handleEditorToolChange}
-                      onUndo={undoPatternEdit}
-                      onRedo={redoPatternEdit}
-                      onExit={exitEditMode}
-                    />
-                    <ColorPickerStrip
-                      palette={palette}
-                      selectedPaletteIndex={activeSelectedPaletteIndex}
-                      brandColors={activePaletteColors}
-                      open={isColorPickerOpen}
-                      onSelect={handleSelectPaletteColor}
-                      onClose={() => setIsColorPickerOpen(false)}
-                    />
-                    {editorTool === 'replace' ? (
-                      <ColorReplacePanel
-                        palette={palette}
-                        fromSymbol={replaceFromSymbol}
-                        toPaletteIndex={replaceToPaletteIndex}
-                        affectedCount={replaceAffectedCount}
-                        onFromSymbolChange={setReplaceFromSymbol}
-                        onToPaletteIndexChange={setReplaceToPaletteIndex}
-                        onApply={handleApplyColorReplace}
-                      />
-                    ) : null}
-                  </div>
-                </div>
+                <PatternEditor
+                  pattern={pattern}
+                  palette={palette}
+                  gridCols={gridCols}
+                  gridRows={gridRows}
+                  cellSize={cellSize}
+                  renderMode={renderMode}
+                  tool={editorTool}
+                  selectedPaletteIndex={activeSelectedPaletteIndex}
+                  colorPickerOpen={isColorPickerOpen}
+                  brandColors={activePaletteColors}
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                  replaceFromSymbol={replaceFromSymbol}
+                  replaceToPaletteIndex={replaceToPaletteIndex}
+                  replaceAffectedCount={replaceAffectedCount}
+                  onStrokeComplete={handleStrokeComplete}
+                  onColorPickerToggle={toggleColorPicker}
+                  onToolChange={handleEditorToolChange}
+                  onUndo={undoPatternEdit}
+                  onRedo={redoPatternEdit}
+                  onExit={exitEditMode}
+                  onSelectPaletteColor={handleSelectPaletteColor}
+                  onCloseColorPicker={() => setIsColorPickerOpen(false)}
+                  onReplaceFromSymbolChange={setReplaceFromSymbol}
+                  onReplaceToPaletteIndexChange={setReplaceToPaletteIndex}
+                  onApplyColorReplace={handleApplyColorReplace}
+                />
               )
             ) : (
               <div className="empty-state">
