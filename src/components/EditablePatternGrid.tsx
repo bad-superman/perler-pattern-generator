@@ -66,6 +66,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
+function getMinZoomForFit(fitZoom: number) {
+  return Math.max(0.06, Math.min(0.35, fitZoom))
+}
+
 export function EditablePatternGrid({
   pattern,
   gridCols,
@@ -86,6 +90,7 @@ export function EditablePatternGrid({
   const miniMapDraggingRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
   const pinchRef = useRef<PinchState | null>(null)
+  const hasCustomZoomRef = useRef(false)
   const zoomRef = useRef(1)
   const [hoverCell, setHoverCell] = useState<{ x: number; y: number } | null>(null)
   const [fitZoom, setFitZoom] = useState(1)
@@ -102,7 +107,7 @@ export function EditablePatternGrid({
   const scaledGridWidth = gridWidth * zoom
   const scaledGridHeight = gridHeight * zoom
   const scaledCellSize = cellSize * zoom
-  const minZoom = Math.max(0.06, Math.min(0.35, fitZoom))
+  const minZoom = getMinZoomForFit(fitZoom)
   const showMiniMap = zoom < 1 || scaledGridWidth > viewportMetrics.width + 2 || scaledGridHeight > viewportMetrics.height + 2
   const miniMapWidth = gridCols >= gridRows ? 132 : Math.max(76, Math.round(132 * (gridCols / gridRows)))
   const miniMapHeight = gridRows >= gridCols ? 132 : Math.max(76, Math.round(132 * (gridRows / gridCols)))
@@ -152,21 +157,27 @@ export function EditablePatternGrid({
     const viewport = viewportRef.current
     if (!viewport) return undefined
 
-    const syncFitZoom = () => {
+    hasCustomZoomRef.current = false
+
+    const syncFitZoom = (forceFit = false) => {
       const fitScale = Math.min(1, (viewport.clientWidth - 24) / gridWidth, (viewport.clientHeight - 24) / gridHeight)
       const nextFitZoom = Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1
       setFitZoom(nextFitZoom)
-      setZoom(nextFitZoom)
+      setZoom((current) => {
+        if (forceFit || !hasCustomZoomRef.current) return nextFitZoom
+        return clamp(Number(current.toFixed(3)), getMinZoomForFit(nextFitZoom), 4)
+      })
       window.requestAnimationFrame(() => syncViewportMetrics())
     }
 
-    syncFitZoom()
-    const observer = new ResizeObserver(syncFitZoom)
+    syncFitZoom(true)
+    const observer = new ResizeObserver(() => syncFitZoom())
+    const handleResize = () => syncFitZoom()
     observer.observe(viewport)
-    window.addEventListener('resize', syncFitZoom)
+    window.addEventListener('resize', handleResize)
     return () => {
       observer.disconnect()
-      window.removeEventListener('resize', syncFitZoom)
+      window.removeEventListener('resize', handleResize)
     }
   }, [gridWidth, gridHeight])
 
@@ -193,6 +204,7 @@ export function EditablePatternGrid({
   function zoomTo(nextZoom: number, clientX?: number, clientY?: number) {
     const viewport = viewportRef.current
     if (!viewport) return
+    hasCustomZoomRef.current = true
     const currentZoom = zoomRef.current
     const targetZoom = clampZoom(nextZoom)
     const rect = viewport.getBoundingClientRect()
