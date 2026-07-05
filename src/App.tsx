@@ -523,7 +523,7 @@ function App() {
   const [previewMode, setPreviewMode] = useState<PreviewMode>('view')
   const [editorTool, setEditorTool] = useState<EditorTool>('paint')
   const [selectedPaletteIndex, setSelectedPaletteIndex] = useState(0)
-  const [showAllColors, setShowAllColors] = useState(false)
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false)
   const [replaceFromSymbol, setReplaceFromSymbol] = useState('')
   const [replaceToPaletteIndex, setReplaceToPaletteIndex] = useState(-1)
   const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
@@ -780,9 +780,11 @@ function App() {
       const { palette: nextPalette, index: paletteIndex } = ensurePaletteColor(palette, entry, SYMBOLS)
       setPatternSnapshot({ pattern, palette: nextPalette })
       setSelectedPaletteIndex(paletteIndex)
+      setEditorTool('paint')
       return
     }
     setSelectedPaletteIndex(index)
+    setEditorTool('paint')
   }
 
   function handleStrokeComplete(cells: Array<{ x: number; y: number }>, paletteIndex: number | null) {
@@ -804,7 +806,7 @@ function App() {
   function exitEditMode() {
     setPreviewMode('view')
     setEditorTool('paint')
-    setShowAllColors(false)
+    setIsColorPickerOpen(false)
     setReplaceFromSymbol('')
     setReplaceToPaletteIndex(-1)
   }
@@ -813,7 +815,18 @@ function App() {
     if (!pattern.length) return
     setPreviewMode('edit')
     setEditorTool('paint')
+    setIsColorPickerOpen(false)
     setError('')
+  }
+
+  function handleEditorToolChange(tool: EditorTool) {
+    setEditorTool(tool)
+    setIsColorPickerOpen(false)
+  }
+
+  function toggleColorPicker() {
+    setEditorTool('paint')
+    setIsColorPickerOpen((current) => !current)
   }
 
   function createBoardPattern() {
@@ -835,7 +848,7 @@ function App() {
     setSourcePreview('')
     lastSourceFileRef.current = null
     setSelectedPaletteIndex(0)
-    setShowAllColors(true)
+    setIsColorPickerOpen(false)
     setReplaceFromSymbol('')
     setReplaceToPaletteIndex(-1)
     setRenderMode('symbols')
@@ -1125,7 +1138,7 @@ function App() {
             )}
           </div>
 
-          {pattern.length > 0 && (
+          {pattern.length > 0 && !isEditing && (
             <div className="result-summary" aria-label="图纸摘要">
               <div>
                 <small>尺寸</small>
@@ -1152,29 +1165,37 @@ function App() {
 
           <div className={`pattern-paper ${isEditing ? 'editing' : ''}`} ref={patternRef}>
             {pattern.length ? (
-              <>
-                {!isEditing ? (
-                  <>
-                    <div className="paper-header">
-                      <div>
-                        <strong>整体图纸</strong>
-                        <span>已缩放到当前区域，完整查看构图</span>
-                      </div>
-                      <b>{Math.round(paperScale * 100)}%</b>
+              !isEditing ? (
+                <>
+                  <div className="paper-header">
+                    <div>
+                      <strong>整体图纸</strong>
+                      <span>已缩放到当前区域，完整查看构图</span>
                     </div>
-                    <div className="paper-overview" ref={paperViewportRef}>
-                      <div
-                        className="print-pattern-wrap"
-                        style={{ ['--paper-scale' as string]: paperScale }}
-                      >
-                        {renderGrid()}
-                      </div>
+                    <b>{Math.round(paperScale * 100)}%</b>
+                  </div>
+                  <div className="paper-overview" ref={paperViewportRef}>
+                    <div
+                      className="print-pattern-wrap"
+                      style={{ ['--paper-scale' as string]: paperScale }}
+                    >
+                      {renderGrid()}
                     </div>
-                  </>
-                ) : (
+                  </div>
+                  <div className="legend">
+                    {palette.map((color) => (
+                      <div className="legend-item" key={color.symbol}>
+                        <i style={{ background: color.hex }}>{color.symbol}</i>
+                        <span>{formatLegendLabel(color)}</span>
+                        <b>{color.count}</b>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="pattern-editor-layout">
                   <EditablePatternGrid
                     pattern={pattern}
-                    palette={palette}
                     gridCols={gridCols}
                     gridRows={gridRows}
                     cellSize={cellSize}
@@ -1183,26 +1204,26 @@ function App() {
                     selectedPaletteIndex={activeSelectedPaletteIndex}
                     onStrokeComplete={handleStrokeComplete}
                   />
-                )}
-                <div className="legend">
-                  {palette.map((color) => (
-                    <div className="legend-item" key={color.symbol}>
-                      <i style={{ background: color.hex }}>{color.symbol}</i>
-                      <span>{formatLegendLabel(color)}</span>
-                      <b>{color.count}</b>
-                    </div>
-                  ))}
-                </div>
-                {isEditing && (
                   <div className="editor-dock">
                     <PatternEditorToolbar
                       tool={editorTool}
+                      selectedColor={palette[activeSelectedPaletteIndex]}
+                      colorPickerOpen={isColorPickerOpen}
                       canUndo={canUndo}
                       canRedo={canRedo}
-                      onToolChange={setEditorTool}
+                      onColorPickerToggle={toggleColorPicker}
+                      onToolChange={handleEditorToolChange}
                       onUndo={undoPatternEdit}
                       onRedo={redoPatternEdit}
                       onExit={exitEditMode}
+                    />
+                    <ColorPickerStrip
+                      palette={palette}
+                      selectedPaletteIndex={activeSelectedPaletteIndex}
+                      brandColors={activePaletteColors}
+                      open={isColorPickerOpen}
+                      onSelect={handleSelectPaletteColor}
+                      onClose={() => setIsColorPickerOpen(false)}
                     />
                     {editorTool === 'replace' ? (
                       <ColorReplacePanel
@@ -1214,19 +1235,10 @@ function App() {
                         onToPaletteIndexChange={setReplaceToPaletteIndex}
                         onApply={handleApplyColorReplace}
                       />
-                    ) : (
-                      <ColorPickerStrip
-                        palette={palette}
-                        selectedPaletteIndex={activeSelectedPaletteIndex}
-                        brandColors={activePaletteColors}
-                        showAllColors={showAllColors}
-                        onSelect={handleSelectPaletteColor}
-                        onToggleAllColors={() => setShowAllColors((current) => !current)}
-                      />
-                    )}
+                    ) : null}
                   </div>
-                )}
-              </>
+                </div>
+              )
             ) : (
               <div className="empty-state">
                 {sourceMode === 'board' ? <Pencil size={38} /> : <Info size={38} />}
