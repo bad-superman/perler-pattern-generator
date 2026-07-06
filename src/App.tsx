@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, RotateCcw, Sparkles, WandSparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, Redo2, RotateCcw, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
@@ -786,6 +786,7 @@ function App() {
 
   function handleStrokeComplete(cells: Array<{ x: number; y: number }>, paletteIndex: number | null) {
     const nextPattern = applyStroke(pattern, palette, cells, paletteIndex)
+    if (nextPattern === pattern) return
     commitPatternHistory({
       pattern: nextPattern,
       palette: recalculatePaletteCounts(nextPattern, palette),
@@ -1115,7 +1116,13 @@ function App() {
             <button type="button" onClick={enterEditMode} disabled={!pattern.length || isEditing}>
               <Pencil size={17} /> 编辑图纸
             </button>
-            <button type="button" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
+            <button type="button" className="action-history-btn" onClick={undoPatternEdit} disabled={!canUndo}>
+              <Undo2 size={17} /> 撤销
+            </button>
+            <button type="button" className="action-history-btn" onClick={redoPatternEdit} disabled={!canRedo}>
+              <Redo2 size={17} /> 重做
+            </button>
+            <button type="button" className="action-export-btn" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
               {isExporting ? <LoaderCircle className="spin-icon" size={17} /> : <Download size={17} />}
               {isExporting ? '导出中...' : '导出 PNG'}
             </button>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BeadCell } from '../pattern/types'
 
-export type EditorTool = 'paint' | 'erase' | 'pan' | 'replace'
+export type EditorTool = 'paint' | 'erase' | 'fill' | 'pan' | 'replace'
 
 interface EditablePatternGridProps {
   pattern: BeadCell[][]
@@ -22,6 +22,8 @@ interface PointerPoint {
 interface PinchState {
   distance: number
   zoom: number
+  contentX: number
+  contentY: number
 }
 
 interface ViewportMetrics {
@@ -241,6 +243,38 @@ export function EditablePatternGrid({
     strokeRef.current.push(cell)
   }
 
+  function getFloodFillCells(start: { x: number; y: number }) {
+    const targetCell = pattern[start.y]?.[start.x]
+    if (!targetCell || targetCell.colorIndex === selectedPaletteIndex) return []
+
+    const visited = new Uint8Array(Math.max(0, gridCols * gridRows))
+    const stack = [start]
+    const cells: Array<{ x: number; y: number }> = []
+
+    while (stack.length) {
+      const cell = stack.pop()
+      if (!cell) continue
+      const { x, y } = cell
+      if (x < 0 || x >= gridCols || y < 0 || y >= gridRows) continue
+      const visitIndex = y * gridCols + x
+      if (visited[visitIndex]) continue
+      visited[visitIndex] = 1
+
+      const currentCell = pattern[y]?.[x]
+      if (!currentCell || currentCell.colorIndex !== targetCell.colorIndex) continue
+
+      cells.push({ x, y })
+      stack.push(
+        { x: x + 1, y },
+        { x: x - 1, y },
+        { x, y: y + 1 },
+        { x, y: y - 1 },
+      )
+    }
+
+    return cells
+  }
+
   function finishStroke() {
     if (!strokeRef.current.length) return
     const paletteIndex = tool === 'erase' ? null : selectedPaletteIndex
@@ -250,23 +284,42 @@ export function EditablePatternGrid({
 
   function startPinch() {
     const points = [...activePointersRef.current.values()]
-    if (points.length < 2) return
+    const viewport = viewportRef.current
+    if (points.length < 2 || !viewport) return
+    const center = getPointerCenter(points)
+    const rect = viewport.getBoundingClientRect()
+    const anchorX = center.x - rect.left
+    const anchorY = center.y - rect.top
     paintingRef.current = false
     panningRef.current = false
     strokeRef.current = []
     pinchRef.current = {
       distance: getPointerDistance(points),
       zoom: zoomRef.current,
+      contentX: (viewport.scrollLeft + anchorX) / zoomRef.current,
+      contentY: (viewport.scrollTop + anchorY) / zoomRef.current,
     }
   }
 
   function handlePinchMove() {
     const pinch = pinchRef.current
+    const viewport = viewportRef.current
     const points = [...activePointersRef.current.values()]
-    if (!pinch || points.length < 2 || !pinch.distance) return
+    if (!pinch || !viewport || points.length < 2 || !pinch.distance) return
     const center = getPointerCenter(points)
     const nextZoom = pinch.zoom * (getPointerDistance(points) / pinch.distance)
-    zoomTo(nextZoom, center.x, center.y)
+    const targetZoom = clampZoom(nextZoom)
+    const rect = viewport.getBoundingClientRect()
+    const anchorX = center.x - rect.left
+    const anchorY = center.y - rect.top
+
+    hasCustomZoomRef.current = true
+    setZoom(targetZoom)
+    window.requestAnimationFrame(() => {
+      viewport.scrollLeft = pinch.contentX * targetZoom - anchorX
+      viewport.scrollTop = pinch.contentY * targetZoom - anchorY
+      syncViewportMetrics()
+    })
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -275,6 +328,14 @@ export function EditablePatternGrid({
 
     if (activePointersRef.current.size >= 2) {
       startPinch()
+      return
+    }
+
+    if (tool === 'fill') {
+      const cell = cellFromPoint(event.clientX, event.clientY) ?? cellFromTarget(event.target)
+      if (!cell) return
+      const cells = getFloodFillCells(cell)
+      if (cells.length) onStrokeComplete(cells, selectedPaletteIndex)
       return
     }
 
@@ -319,7 +380,7 @@ export function EditablePatternGrid({
 
     const cell = cellFromPoint(event.clientX, event.clientY)
     setHoverCell(cell)
-    if (!paintingRef.current || !cell || tool === 'pan' || tool === 'replace') return
+    if (!paintingRef.current || !cell || tool === 'pan' || tool === 'replace' || tool === 'fill') return
     addStrokeCell(cell)
   }
 

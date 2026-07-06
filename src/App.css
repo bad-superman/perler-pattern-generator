@@ -392,7 +392,13 @@ h1 {
   padding: 0 10px;
 }
 
-.action-grid button:last-child:nth-child(3) {
+.action-grid .action-history-btn {
+  min-height: 42px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.action-grid .action-export-btn {
   grid-column: 1 / -1;
 }
 
@@ -555,8 +561,8 @@ h1 {
 }
 
 .action-grid button:disabled {
-  cursor: wait;
-  opacity: 0.72;
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .spin-icon,
@@ -1050,7 +1056,7 @@ h1 {
 
 .editor-tools-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1421,7 +1427,7 @@ h1 {
   }
 
   .editor-tools-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 5px;
   }
 

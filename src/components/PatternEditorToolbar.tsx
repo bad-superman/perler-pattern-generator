@@ -1,4 +1,4 @@
-import { Check, Eraser, Hand, Paintbrush, Palette, Redo2, Replace, Undo2 } from 'lucide-react'
+import { Check, Eraser, Hand, Paintbrush, PaintBucket, Palette, Redo2, Replace, Undo2 } from 'lucide-react'
 import type { PaletteColor } from '../pattern/types'
 import type { EditorTool } from './EditablePatternGrid'
 
@@ -54,6 +54,13 @@ export function PatternEditorToolbar({
           onClick={() => onToolChange('erase')}
         >
           <Eraser size={18} /> 橡皮
+        </button>
+        <button
+          type="button"
+          className={`editor-tool-btn ${tool === 'fill' ? 'active' : ''}`}
+          onClick={() => onToolChange('fill')}
+        >
+          <PaintBucket size={18} /> 填充
         </button>
         <button
           type="button"

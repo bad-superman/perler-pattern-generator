@@ -57,11 +57,37 @@ export function applyStroke(
   cells: Array<{ x: number; y: number }>,
   paletteIndex: number | null,
 ): BeadCell[][] {
-  let next = pattern
+  if (!cells.length) return pattern
+
+  const targetColor = paletteIndex === null || paletteIndex < 0 ? null : paletteColorAt(palette, paletteIndex)
+  if (paletteIndex !== null && paletteIndex >= 0 && !targetColor) return pattern
+
+  let next: BeadCell[][] | null = null
   cells.forEach(({ x, y }) => {
-    next = setCell(next, x, y, palette, paletteIndex)
+    const currentCell = pattern[y]?.[x]
+    if (!currentCell) return
+
+    const replacement = targetColor
+      ? {
+          colorIndex: paletteIndex ?? -1,
+          hex: targetColor.hex,
+          symbol: targetColor.symbol,
+        }
+      : createEmptyCell()
+
+    if (
+      currentCell.colorIndex === replacement.colorIndex &&
+      currentCell.hex === replacement.hex &&
+      currentCell.symbol === replacement.symbol
+    ) {
+      return
+    }
+
+    if (!next) next = clonePattern(pattern)
+    next[y][x] = replacement
   })
-  return next
+
+  return next ?? pattern
 }
 
 export function recalculatePaletteCounts(pattern: BeadCell[][], palette: PaletteColor[]): PaletteColor[] {
