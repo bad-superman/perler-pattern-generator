@@ -31,7 +31,7 @@ export function ColorReplacePanel({
             <option value="">选择要替换的颜色</option>
             {usedColors.map((color) => (
               <option key={color.symbol} value={color.symbol}>
-                {color.symbol} · {color.code} ({color.count})
+                {color.code} ({color.count})
               </option>
             ))}
           </select>
@@ -45,7 +45,7 @@ export function ColorReplacePanel({
             <option value="">选择目标颜色</option>
             {palette.map((color, index) => (
               <option key={`${color.symbol}-${color.code}`} value={index}>
-                {color.symbol} · {color.code}
+                {color.code}
               </option>
             ))}
           </select>

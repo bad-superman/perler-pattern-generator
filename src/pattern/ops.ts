@@ -106,23 +106,13 @@ export function recalculatePaletteCounts(pattern: BeadCell[][], palette: Palette
   }))
 }
 
-export function nextAvailableSymbol(palette: PaletteColor[], symbols: string) {
-  const used = new Set(palette.map((color) => color.symbol))
-  for (const symbol of symbols) {
-    if (!used.has(symbol)) return symbol
-  }
-  return String(palette.length + 1)
-}
-
 export function ensurePaletteColor(
   palette: PaletteColor[],
   entry: BeadPaletteEntry,
-  symbols: string,
 ): { palette: PaletteColor[]; index: number } {
   const existingIndex = palette.findIndex((color) => color.code === entry[0])
   if (existingIndex >= 0) return { palette, index: existingIndex }
 
-  const symbol = nextAvailableSymbol(palette, symbols)
   const nextPalette = [
     ...palette,
     {
@@ -130,7 +120,7 @@ export function ensurePaletteColor(
       name: entry[1],
       hex: entry[2],
       count: 0,
-      symbol,
+      symbol: entry[0],
     },
   ]
   return { palette: nextPalette, index: nextPalette.length - 1 }

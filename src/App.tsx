@@ -30,7 +30,6 @@ type RenderMode = 'symbols' | 'solid'
 type SourceMode = 'local' | 'ai' | 'board'
 type PreviewMode = 'view' | 'edit'
 
-const SYMBOLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789◆●■▲★✦✚✕⬟⬢'
 const DEFAULT_GRID_SIZE = 52
 const AI_DEFAULT_GRID_SIZE = 52
 const AI_GRID_RECOMMEND_MAX = 56
@@ -117,9 +116,9 @@ function getGridSizeHint(size: number) {
 
 function getExportCellSize(gridCols: number, gridRows: number) {
   const longSide = Math.max(gridCols, gridRows)
-  if (longSide >= 96) return 8
-  if (longSide > 64) return 12
-  return 16
+  if (longSide >= 96) return 14
+  if (longSide > 64) return 16
+  return 18
 }
 
 function getSamplingScale(cols: number, rows: number) {
@@ -295,7 +294,7 @@ function createBoardStarterPalette(brandColors: readonly BeadPaletteEntry[]): Pa
     name: starter[1],
     hex: starter[2],
     count: 0,
-    symbol: SYMBOLS[0],
+    symbol: starter[0],
   }]
 }
 
@@ -382,7 +381,7 @@ function buildPatternExportCanvas(
 
   const legendCols = Math.min(4, Math.max(1, palette.length))
   const legendRows = Math.ceil(palette.length / legendCols)
-  const legendItemW = 220
+  const legendItemW = 240
   const legendItemH = 28
   const legendPad = 24
   const legendW = legendCols * legendItemW + legendPad * 2
@@ -442,7 +441,7 @@ function buildPatternExportCanvas(
         const px = gridX + gridPad + x * (exportCell + gap)
         const py = gridY + gridPad + y * (exportCell + gap)
         ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
-        ctx.font = `700 ${Math.max(8, Math.floor(exportCell * 0.55))}px "Noto Sans SC", sans-serif`
+        ctx.font = `800 ${Math.max(7, Math.floor(exportCell * 0.42))}px "Noto Sans SC", sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText(cell.symbol, px + exportCell / 2, py + exportCell / 2 + 0.5)
@@ -456,7 +455,7 @@ function buildPatternExportCanvas(
   ctx.font = '700 16px "Noto Sans SC", sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  ctx.fillText('色号清单', legendX + legendPad, legendY + 20)
+  ctx.fillText('色号清单（用量倒序）', legendX + legendPad, legendY + 20)
 
   palette.forEach((color, index) => {
     const col = index % legendCols
@@ -464,19 +463,19 @@ function buildPatternExportCanvas(
     const x = legendX + legendPad + col * legendItemW
     const y = legendY + 36 + row * legendItemH
     ctx.fillStyle = color.hex
-    ctx.fillRect(x, y + 4, 20, 20)
+    ctx.fillRect(x, y + 4, 32, 20)
     ctx.strokeStyle = 'rgba(43, 35, 58, 0.18)'
-    ctx.strokeRect(x + 0.5, y + 4.5, 19, 19)
+    ctx.strokeRect(x + 0.5, y + 4.5, 31, 19)
     ctx.fillStyle = isDarkHex(color.hex) ? '#fff' : '#1d1a23'
-    ctx.font = '700 11px "Noto Sans SC", sans-serif'
+    ctx.font = '700 10px "Noto Sans SC", sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(color.symbol, x + 10, y + 14)
+    ctx.fillText(color.code, x + 16, y + 14)
     ctx.fillStyle = '#1d1a23'
     ctx.font = '400 13px "Noto Sans SC", sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(formatLegendLabel(color), x + 28, y + 14)
+    ctx.fillText(formatLegendLabel(color), x + 40, y + 14)
     ctx.textAlign = 'right'
     ctx.fillStyle = '#6f647d'
     ctx.fillText(String(color.count), x + legendItemW - 12, y + 14)
@@ -545,7 +544,7 @@ function App() {
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
   const cellSize = renderMode === 'symbols' ? 20 : 14
-  const modeLabel = renderMode === 'symbols' ? '符号图纸' : '纯色预览'
+  const modeLabel = renderMode === 'symbols' ? '色号图纸' : '纯色预览'
   const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
   const activePaletteColors = useMemo(() => getPaletteColors(paletteBrand), [paletteBrand])
   const activePaletteSize = useMemo(() => getPaletteSize(paletteBrand), [paletteBrand])
@@ -668,12 +667,12 @@ function App() {
         .map(([index]) => index)
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
-      const selectedPalette = selected.map((paletteIndex, index) => ({
+      const selectedPalette = selected.map((paletteIndex) => ({
         code: beadPalette[paletteIndex][0],
         name: beadPalette[paletteIndex][1],
         hex: beadPalette[paletteIndex][2],
         count: 0,
-        symbol: SYMBOLS[index] ?? String(index + 1),
+        symbol: beadPalette[paletteIndex][0],
       }))
 
       const selectedColors = selected.map((index) => beadPalette[index])
@@ -774,7 +773,7 @@ function App() {
     if (index < 0) {
       const entry = activePaletteColors[-(index + 1)]
       if (!entry) return
-      const { palette: nextPalette, index: paletteIndex } = ensurePaletteColor(palette, entry, SYMBOLS)
+      const { palette: nextPalette, index: paletteIndex } = ensurePaletteColor(palette, entry)
       setPatternSnapshot({ pattern, palette: nextPalette })
       setSelectedPaletteIndex(paletteIndex)
       setEditorTool('paint')
@@ -894,7 +893,9 @@ function App() {
     const startedAt = Date.now()
     try {
       await document.fonts.ready
-      const exportPalette = palette.filter((color) => color.count > 0)
+      const exportPalette = [...palette]
+        .filter((color) => color.count > 0)
+        .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
       const canvas = buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, renderMode, activeCells)
       const blob = await canvasToBlob(canvas)
       saveAs(blob, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)
@@ -1103,7 +1104,7 @@ function App() {
           )}
 
           <div className="segmented">
-            <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">符号图纸</button>
+            <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">色号图纸</button>
             <button className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')} type="button">纯色预览</button>
           </div>
 
@@ -1189,7 +1190,7 @@ function App() {
                   <div className="legend">
                     {palette.map((color) => (
                       <div className="legend-item" key={color.symbol}>
-                        <i style={{ background: color.hex }}>{color.symbol}</i>
+                        <i style={{ background: color.hex, color: isDarkHex(color.hex) ? '#fff' : '#17131f' }}>{color.symbol}</i>
                         <span>{formatLegendLabel(color)}</span>
                         <b>{color.count}</b>
                       </div>
