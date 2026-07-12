@@ -20,20 +20,20 @@ interface BuildPromptPipelineV2Options {
 }
 
 const STYLE_TEMPLATES: Record<AiPrimaryStyle, string> = {
-  chibi: 'Cute chibi pixel-art portrait. Large head, simplified facial features, expressive eyes, soft friendly look, rounded shapes, charming character design.',
-  retro_8bit: 'Retro 8-bit pixel art sprite style. Nostalgic game character look, strong silhouette, chunky pixel shapes, high contrast, simple readable forms.',
-  pixel_icon: 'Clean pixel icon style. Centered subject, iconic silhouette, geometric simplification, bold shapes, minimal background, easy to recognize at small size.',
-  limited_palette: 'Limited-palette pixel art style. Clear silhouette, simplified forms, large connected color regions, crisp hard edges, bead-pattern friendly design.',
+  chibi: '可爱 Q 版像素画风格，头身比适度夸张，圆润造型，表情简化友好，保留参考图主要造型特征。',
+  retro_8bit: '复古 8-bit 像素画风格，轮廓清晰，块状造型，高对比，类似经典游戏素材。',
+  pixel_icon: '干净的像素图标风格，主体居中，剪影明确，几何化简化，大色块，极简背景，小尺寸也容易识别。',
+  limited_palette: '有限色板像素画风格，清晰轮廓，简化造型，连续大色块，硬边缘，适合后续拼豆量化。',
 }
 
 const SYSTEM_PROMPT = [
-  'Create a clean pixel-art source image for a Perler bead pattern.',
-  'This image will be cropped, resized, quantized, and mapped to real bead colors later.',
-  'Prioritize readability, iconic shapes, clear silhouette, and large connected color regions over realism or fine details.',
+  '请根据参考图生成一张适合后续转换为拼豆图纸的像素画源图。',
+  '重点是主体清晰、轮廓明确、大色块、少细节，方便后续裁切、缩放、限色和映射到真实拼豆色卡。',
+  '不要追求照片级还原，也不要生成真实拼豆成品图。',
 ].join(' ')
 
 const NEGATIVE_AS_INSTRUCTION = [
-  'Avoid photorealism, realistic beads, bead board, circular beads, peg holes, grid lines, text, watermark, busy background, noisy texture, tiny details, thin fragile lines, smooth airbrush shading, and excessive gradients.',
+  '避免照片质感、真实拼豆、底板、网格线、文字、水印、复杂背景、噪点纹理、细碎小元素、脆弱细线和过多渐变。',
 ].join(' ')
 
 function compactJoin(parts: Array<string | undefined>) {
@@ -42,23 +42,23 @@ function compactJoin(parts: Array<string | undefined>) {
 
 function buildCraftConstraints(gridSize?: number, maxColors?: number) {
   const parts: string[] = [
-    'Use broad shapes, clean edges, and connected color blocks.',
-    'Keep only the most important identity features from the reference image.',
-    'Simplify hair, clothing patterns, hands, facial details, logos, and accessories so they stay readable after bead-grid conversion.',
-    'Use a plain, transparent-looking, or very minimal background.',
+    '使用宽大的形状、干净边缘和连续色块。',
+    '保留参考图最重要的视觉特征，不做照片级复刻。',
+    '简化发型、服装图案、手部、表情、小标记和配饰，让它们在缩小成拼豆格后仍然可读。',
+    '使用纯色或极简背景。'
   ]
 
   if (gridSize) {
-    parts.push(`The final bead pattern will be about ${gridSize} beads wide, so design the image to remain readable at that small size.`)
+    parts.push(`最终拼豆图纸大约是 ${gridSize} 格宽，请按这个小尺寸设计，让缩小和量化后仍然容易识别。`)
     if (gridSize <= 32) {
-      parts.push('This is a very small pattern: use icon-level simplification, a strong silhouette, and only essential facial or object features.')
+      parts.push('这是很小的图纸，请使用图标级简化、强轮廓和最必要的视觉特征。')
     } else if (gridSize <= 56) {
-      parts.push('Use small-pattern simplification: avoid subtle facial details, small textures, and thin outlines that would disappear after resizing.')
+      parts.push('请按小图纸简化，避免缩放后会消失的细微表情、小纹理和细线。')
     }
   }
 
   if (maxColors) {
-    parts.push(`Use about ${maxColors} dominant colors or fewer. Prefer distinct colors and avoid many near-identical shades.`)
+    parts.push(`主要颜色控制在约 ${maxColors} 种以内，使用区分明显的颜色，避免大量相近色。`)
   }
 
   return parts.join(' ')

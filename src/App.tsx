@@ -771,15 +771,44 @@ function App() {
         setDebugPipelineInfo(pipelineInfo)
         clearDebugAiImage()
       }
-      const aiFile = await generateAgnesImage({
-        file: refFile,
-        styleId: aiStyleId,
-        extraPrompt: aiPrompt,
-        gridSize,
-        maxColors,
-        size,
-        prompt,
-      })
+      let aiFile: File
+      try {
+        aiFile = await generateAgnesImage({
+          file: refFile,
+          styleId: aiStyleId,
+          extraPrompt: aiPrompt,
+          gridSize,
+          maxColors,
+          size,
+          prompt,
+        })
+      } catch (generateCause) {
+        const message = generateCause instanceof Error ? generateCause.message : ''
+        const shouldRetryLegacy = isPromptPipelineV2Enabled() && /unable to generate|modify your prompt|content/i.test(message)
+        if (!shouldRetryLegacy) throw generateCause
+
+        const legacyPrompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
+        pipelineInfo = {
+          mode: 'v2-fallback',
+          finalPrompt: legacyPrompt,
+          userStyleOverride: aiStyleId,
+          fallbackReason: `V2 prompt was rejected by the image model, retried with legacy prompt: ${message}`,
+        }
+        prompt = legacyPrompt
+        if (debugMode) {
+          setDebugPrompt(prompt)
+          setDebugPipelineInfo(pipelineInfo)
+        }
+        aiFile = await generateAgnesImage({
+          file: refFile,
+          styleId: aiStyleId,
+          extraPrompt: aiPrompt,
+          gridSize,
+          maxColors,
+          size,
+          prompt,
+        })
+      }
       if (debugMode) updateDebugAiImage(aiFile)
       const croppedFile = await cropSubjectFromImage(aiFile)
       await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
