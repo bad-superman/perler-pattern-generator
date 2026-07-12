@@ -1,3 +1,10 @@
 AGNES_API_KEY=your_api_key_here
 AGNES_API_BASE=https://apihub.agnes-ai.com/v1/images/generations
 AGNES_MODEL=agnes-image-2.1-flash
+
+VITE_AI_PROMPT_PIPELINE_V2=false
+VITE_AI_PROMPT_DEBUG=false
+# Vision 默认复用 AGNES_API_KEY，并将 AGNES_API_BASE 自动换成 /v1/chat/completions；如需独立配置再覆盖
+VISION_API_KEY=
+VISION_API_BASE=
+VISION_MODEL=agnes-2.0-flash

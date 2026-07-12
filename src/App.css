@@ -1508,3 +1508,12 @@ h1 {
     display: none;
   }
 }
+
+.ai-risk-hint {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(243, 156, 18, 0.12);
+  color: #8a5a08;
+  font-size: 12px;
+  line-height: 1.5;
+}

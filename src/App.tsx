@@ -4,6 +4,9 @@ import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { AGNES_STYLE_PRESETS, buildAgnesPrompt } from './agnes/styles'
+import { buildPromptFromVisionResult, getVisionOverrideRisk } from './agnes/promptBuilder'
+import { analyzeImageForPerler } from './agnes/visionClient'
+import { isPromptDebugEnabled, isPromptPipelineV2Enabled, PRIMARY_STYLE_LABELS, type PromptPipelineDebugInfo } from './agnes/visionTypes'
 import { PatternEditor, type EditorTool } from './components/PatternEditor'
 import { usePatternHistory } from './hooks/usePatternHistory'
 import {
@@ -44,6 +47,7 @@ const GUIDE_BLOCK_SIZE = 5
 function readDebugModeFromUrl() {
   if (typeof window === 'undefined') return false
   const value = new URLSearchParams(window.location.search).get('debug')
+  if (isPromptDebugEnabled()) return true
   if (value === null) return false
   return !['0', 'false', 'off', 'no'].includes(value.trim().toLowerCase())
 }
@@ -533,6 +537,8 @@ function App() {
   const [error, setError] = useState('')
   const [debugMode, setDebugMode] = useState(readDebugModeFromUrl)
   const [debugPrompt, setDebugPrompt] = useState('')
+  const [debugPipelineInfo, setDebugPipelineInfo] = useState<PromptPipelineDebugInfo | null>(null)
+  const [aiStyleRiskHint, setAiStyleRiskHint] = useState('')
   const [debugAiImageUrl, setDebugAiImageUrl] = useState('')
   const patternRef = useRef<HTMLDivElement>(null)
   const paperViewportRef = useRef<HTMLDivElement>(null)
@@ -742,9 +748,37 @@ function App() {
     setIsAiGenerating(true)
     try {
       const size = await pickAgnesSize(refFile, shape)
-      const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
+      let prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
+      let pipelineInfo: PromptPipelineDebugInfo = { mode: 'legacy', finalPrompt: prompt }
+      let styleRiskHint = ''
+
+      if (isPromptPipelineV2Enabled()) {
+        try {
+          const vision = await analyzeImageForPerler({
+            file: refFile,
+            gridSize,
+            maxColors,
+            userStyle: aiStyleId,
+          })
+          prompt = buildPromptFromVisionResult({
+            vision,
+            userPrompt: aiPrompt,
+            userStyle: aiStyleId,
+            gridSize,
+            maxColors,
+          })
+          styleRiskHint = getVisionOverrideRisk(vision, aiStyleId)
+          pipelineInfo = { mode: 'v2', vision, finalPrompt: prompt }
+        } catch (visionCause) {
+          const fallbackReason = visionCause instanceof Error ? visionCause.message : 'Vision 分析失败，已回退旧提示词'
+          pipelineInfo = { mode: 'v2-fallback', finalPrompt: prompt, fallbackReason }
+        }
+      }
+
+      setAiStyleRiskHint(styleRiskHint)
       if (debugMode) {
         setDebugPrompt(prompt)
+        setDebugPipelineInfo(pipelineInfo)
         clearDebugAiImage()
       }
       const aiFile = await generateAgnesImage({
@@ -763,6 +797,7 @@ function App() {
         sharpQuantize: true,
       })
     } catch (cause) {
+      setAiStyleRiskHint('')
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
     } finally {
       setIsAiGenerating(false)
@@ -1028,6 +1063,11 @@ function App() {
                   </button>
                 ))}
               </div>
+              {aiStyleRiskHint && (
+                <div className="ai-risk-hint" role="status">
+                  {aiStyleRiskHint}
+                </div>
+              )}
               <label className="ai-prompt-field">
                 <span>补充描述（选填）</span>
                 <textarea
@@ -1272,6 +1312,30 @@ function App() {
         <details className="debug-panel" open>
           <summary>AI 调试模式</summary>
           <div className="debug-content">
+            <section>
+              <h2>Pipeline</h2>
+              {debugPipelineInfo ? (
+                <pre>{JSON.stringify({ ...debugPipelineInfo, finalPrompt: undefined }, null, 2)}</pre>
+              ) : (
+                <p>生成一次 AI 拼豆图后会显示 Pipeline 状态。</p>
+              )}
+            </section>
+            {debugPipelineInfo?.vision && (
+              <section>
+                <h2>Vision JSON</h2>
+                <pre>{JSON.stringify(debugPipelineInfo.vision, null, 2)}</pre>
+              </section>
+            )}
+            {debugPipelineInfo?.vision && (
+              <section>
+                <h2>Style Router / Feasibility</h2>
+                <pre>{JSON.stringify({
+                  selectedStyle: PRIMARY_STYLE_LABELS[debugPipelineInfo.vision.style_router.selected_style],
+                  ...debugPipelineInfo.vision.style_router,
+                  feasibility: debugPipelineInfo.vision.feasibility,
+                }, null, 2)}</pre>
+              </section>
+            )}
             <section>
               <h2>AI 完整提示词</h2>
               {debugPrompt ? (
