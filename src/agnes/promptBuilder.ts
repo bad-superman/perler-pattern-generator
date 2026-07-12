@@ -28,53 +28,16 @@ const STYLE_TEMPLATES: Record<AiPrimaryStyle, string> = {
   limited_palette: 'Limited palette pixel art，clean pixel clusters，色块清晰，轮廓明确。',
 }
 
-function buildSystemPrompt(gridSize?: number, gridRows?: number) {
-  const gridText = gridSize ? `${gridSize}×${gridRows ?? gridSize}` : 'N×M'
-  return `您是一位专业的像素艺术设计师，专门创作可用于生产的拼豆图案。
+function buildSystemPrompt(gridSize?: number, gridRows?: number, maxColors?: number) {
+  const gridText = gridSize ? `${gridSize}*${gridRows ?? gridSize}` : 'N*M'
+  const colorText = maxColors ? `${maxColors}` : 'n'
+  return `你是一个像素画创作大师，擅长创作不同风格的像素画
 
-您的目标不是创作逼真的插图。
-您的目标是在 ${gridText} 网格内将图像转换为清晰、简洁的像素设计，并将其转化为实际的拼豆图案。
+你的职责：
+根据用户提供的图片，在${gridText}的网格中，使用${colorText}种颜色创作指定风格的像素画
 
-请遵循以下原则：
-1. 像素结构 - 每个视觉元素都必须与 ${gridText} 像素网格对齐。
-- 每个最小网格单元代表一颗实物拼豆。
-- 每个最小网格单元必须是单一纯色。
-- 一个网格单元内部不能出现渐变、纹理、阴影过渡、半透明或多个颜色。
-- 使用清晰的像素簇，而不是平滑的形状。
-- 在低分辨率下保持可识别的轮廓。
-
-2. 色彩管理
-- 使用有限的调色板。
-- 优先使用纯色区域。
-- 避免使用渐变色。
-- 避免使用细微的颜色过渡。
-- 每个颜色区域应包含相连的像素区域。
-
-3. 生产限制
-- 设计必须能够打印成拼豆图表。
-- 除非必要，否则避免使用孤立的单个像素。
-- 避免使用小于一个像素的细线。
-- 避免使用无法复制的过多细节。
-
-4. 图像简化
-- 优先考虑：
-> 1. 轮廓
-> 2. 面部/五官
-> 3. 主要颜色
-> 4. 重要配饰
-- 移除：
-> 1. 背景噪点
-> 2. 纹理
-> 3. 逼真的光照
-> 4. 不必要的细节
-
-5. 视觉风格
-- 使用干净的像素簇。
-- 使用锐利的边缘。
-- 精心设计像素位置。
-- 不使用抗锯齿。
-
-始终优化为：“易于识别 + 美观 + 易于生产”。`
+其中：
+像素画风格、M、N、n用户会提供`
 }
 
 const NEGATIVE_AS_INSTRUCTION = [
@@ -109,7 +72,7 @@ export function buildPromptPipelineV2(options: BuildPromptPipelineV2Options) {
   const effectiveStyle = getEffectivePrimaryStyleFromLegacy(options.styleId)
   return compactJoin([
     `系统提示词：
-${buildSystemPrompt(options.gridSize, options.gridRows)}`,
+${buildSystemPrompt(options.gridSize, options.gridRows, options.maxColors)}`,
     `STYLE：
 ${STYLE_TEMPLATES[effectiveStyle]}`,
     `CRAFT CONSTRAINTS：
@@ -136,7 +99,7 @@ export function buildPromptFromVisionResult(options: BuildPromptOptions) {
 
   return compactJoin([
     `系统提示词：
-${buildSystemPrompt(gridSize, gridRows)}`,
+${buildSystemPrompt(gridSize, gridRows, maxColors)}`,
     `内容：
 ${vision.prompt_content.subject_phrase || vision.subject.description || vision.subject.category}${featureText ? `。关键特征：${featureText}` : ''}`,
     `构图：
