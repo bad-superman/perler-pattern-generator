@@ -28,14 +28,18 @@ const STYLE_TEMPLATES: Record<AiPrimaryStyle, string> = {
   limited_palette: 'Limited palette pixel art，clean pixel clusters，色块清晰，轮廓明确。',
 }
 
-const SYSTEM_PROMPT = `您是一位专业的像素艺术设计师，专门创作可用于生产的拼豆图案。
+function buildSystemPrompt(gridSize?: number, gridRows?: number) {
+  const gridText = gridSize ? `${gridSize}×${gridRows ?? gridSize}` : 'N×M'
+  return `您是一位专业的像素艺术设计师，专门创作可用于生产的拼豆图案。
 
 您的目标不是创作逼真的插图。
-您的目标是在N*M网格内将图像转换为清晰、简洁的像素设计，并将其转化为实际的拼豆图案。
+您的目标是在 ${gridText} 网格内将图像转换为清晰、简洁的像素设计，并将其转化为实际的拼豆图案。
 
 请遵循以下原则：
-1. 像素结构 - 每个视觉元素都必须与像素网格对齐。
-- 每个像素代表一颗实物拼豆。
+1. 像素结构 - 每个视觉元素都必须与 ${gridText} 像素网格对齐。
+- 每个最小网格单元代表一颗实物拼豆。
+- 每个最小网格单元必须是单一纯色。
+- 一个网格单元内部不能出现渐变、纹理、阴影过渡、半透明或多个颜色。
 - 使用清晰的像素簇，而不是平滑的形状。
 - 在低分辨率下保持可识别的轮廓。
 
@@ -71,6 +75,7 @@ const SYSTEM_PROMPT = `您是一位专业的像素艺术设计师，专门创作
 - 不使用抗锯齿。
 
 始终优化为：“易于识别 + 美观 + 易于生产”。`
+}
 
 const NEGATIVE_AS_INSTRUCTION = [
   '避免照片质感、真实拼豆、底板、网格线、文字、水印、复杂背景、噪点纹理、细碎小元素、脆弱细线和过多渐变。',
@@ -103,36 +108,49 @@ export function getEffectivePrimaryStyleFromLegacy(styleId: string): AiPrimarySt
 export function buildPromptPipelineV2(options: BuildPromptPipelineV2Options) {
   const effectiveStyle = getEffectivePrimaryStyleFromLegacy(options.styleId)
   return compactJoin([
-    `SYSTEM:\n${SYSTEM_PROMPT}`,
-    `STYLE:\n${STYLE_TEMPLATES[effectiveStyle]}`,
-    `CRAFT CONSTRAINTS:\n${buildCraftConstraints(options.gridSize, options.maxColors)}`,
-    options.userPrompt?.trim() ? `USER REQUEST:\n${options.userPrompt.trim()}` : undefined,
-    `NEGATIVE INSTRUCTIONS:\n${NEGATIVE_AS_INSTRUCTION}`,
+    `系统提示词：
+${buildSystemPrompt(options.gridSize, options.gridRows)}`,
+    `STYLE：
+${STYLE_TEMPLATES[effectiveStyle]}`,
+    `CRAFT CONSTRAINTS：
+${buildCraftConstraints(options.gridSize, options.gridRows, options.maxColors)}`,
+    options.userPrompt?.trim() ? `用户补充：
+${options.userPrompt.trim()}` : undefined,
+    `避免内容：
+${NEGATIVE_AS_INSTRUCTION}`,
   ])
 }
 
 export function buildPromptFromVisionResult(options: BuildPromptOptions) {
-  const { vision, userPrompt = '', userStyle, gridSize, maxColors } = options
+  const { vision, userPrompt = '', userStyle, gridSize, gridRows, maxColors } = options
   const effectiveStyle = getEffectivePrimaryStyle(vision, userStyle)
   const featureText = [
     ...vision.visual_features.shape_features,
     ...vision.visual_features.color_features,
     ...vision.visual_features.identity_features,
     ...vision.prompt_content.feature_phrases,
-  ].slice(0, 16).join(', ')
+  ].slice(0, 16).join('，')
   const avoidText = vision.prompt_content.avoid_phrases.length > 0
-    ? `Additional avoid list: ${vision.prompt_content.avoid_phrases.join(', ')}.`
+    ? `额外避免：${vision.prompt_content.avoid_phrases.join('，')}。`
     : ''
 
   return compactJoin([
-    `SYSTEM:\n${SYSTEM_PROMPT}`,
-    `CONTENT:\n${vision.prompt_content.subject_phrase || vision.subject.description || vision.subject.category}.${featureText ? ` Key identifying features: ${featureText}.` : ''}`,
-    `COMPOSITION:\n${vision.prompt_content.composition_phrase || vision.composition.layout || 'Centered close-up subject'}; pose/action: ${vision.composition.pose || 'keep the subject recognizable'}; crop strategy: ${vision.composition.crop_strategy || 'tight crop'}; subject fills 75-90% of the canvas.`,
-    `STYLE:\n${STYLE_TEMPLATES[effectiveStyle]} ${vision.prompt_content.style_phrase || ''}`,
-    `CRAFT CONSTRAINTS:\n${buildCraftConstraints(gridSize, maxColors)} Detail level: ${vision.pixel_strategy.detail_level}; outline: ${vision.pixel_strategy.outline}; shading: ${vision.pixel_strategy.shading}. Minimum region size: ${vision.manufacturing_strategy.min_region_size || '2-3 beads'}; thin line policy: ${vision.manufacturing_strategy.thin_line_policy || 'avoid isolated one-pixel lines'}; small detail policy: ${vision.manufacturing_strategy.small_detail_policy || 'merge or remove tiny details'}; edge cleanup: ${vision.manufacturing_strategy.edge_cleanup || 'clean jagged edges'}; background: ${vision.manufacturing_strategy.background_policy || (vision.background.remove ? 'remove or plain background' : 'minimal background')}.`,
-    userPrompt.trim() ? `USER REQUEST:\n${userPrompt.trim()}` : undefined,
-    avoidText ? `ADDITIONAL AVOID:\n${avoidText}` : undefined,
-    `NEGATIVE INSTRUCTIONS:\n${NEGATIVE_AS_INSTRUCTION}`,
+    `系统提示词：
+${buildSystemPrompt(gridSize, gridRows)}`,
+    `内容：
+${vision.prompt_content.subject_phrase || vision.subject.description || vision.subject.category}${featureText ? `。关键特征：${featureText}` : ''}`,
+    `构图：
+${vision.prompt_content.composition_phrase || vision.composition.layout || '主体居中近景'}；姿态/动作：${vision.composition.pose || '保持易识别姿态'}；裁切：${vision.composition.crop_strategy || '紧凑裁切'}。`,
+    `STYLE：
+${STYLE_TEMPLATES[effectiveStyle]} ${vision.prompt_content.style_phrase || ''}`,
+    `CRAFT CONSTRAINTS：
+${buildCraftConstraints(gridSize, gridRows, maxColors)}`,
+    userPrompt.trim() ? `用户补充：
+${userPrompt.trim()}` : undefined,
+    avoidText ? `额外避免：
+${avoidText}` : undefined,
+    `避免内容：
+${NEGATIVE_AS_INSTRUCTION}`,
   ])
 }
 
