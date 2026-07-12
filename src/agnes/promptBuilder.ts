@@ -37,7 +37,26 @@ function buildSystemPrompt(gridSize?: number, gridRows?: number, maxColors?: num
 根据用户提供的图片，在${gridText}的网格中，使用${colorText}种颜色创作指定风格的像素画
 
 其中：
-像素画风格、M、N、n用户会提供`
+像素画风格、M、N、n用户会提供
+
+1. 图像简化
+- 优先考虑：
+> 1. 轮廓
+> 2. 面部/五官
+> 3. 主要颜色
+> 4. 重要配饰
+- 移除：
+> 1. 背景噪点
+> 2. 纹理
+> 3. 逼真的光照
+> 4. 不必要的细节
+
+2. 视觉风格
+- 简约风格
+- 使用干净的像素簇。
+- 使用锐利的边缘。
+- 精心设计像素位置。
+- 不使用抗锯齿。`
 }
 
 const NEGATIVE_AS_INSTRUCTION = [
