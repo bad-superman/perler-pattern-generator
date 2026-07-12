@@ -69,13 +69,15 @@ export interface VisionRequestOptions {
   file: File
   gridSize: number
   maxColors: number
-  userStyle: string
+  userStyle?: string
 }
 
 export interface PromptPipelineDebugInfo {
   mode: 'legacy' | 'v2' | 'v2-fallback'
   vision?: VisionPerlerAnalysis
   finalPrompt: string
+  effectiveStyle?: AiPrimaryStyle
+  userStyleOverride?: string
   fallbackReason?: string
 }
 

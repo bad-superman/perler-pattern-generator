@@ -1,4 +1,3 @@
-import { AGNES_BASE_PROMPT } from './styles'
 import {
   mapLegacyStyleToPrimary,
   type AiPrimaryStyle,
@@ -37,7 +36,7 @@ function buildUserConstraints(gridSize?: number, maxColors?: number) {
 }
 
 export function getEffectivePrimaryStyle(vision: VisionPerlerAnalysis, userStyle?: string): AiPrimaryStyle {
-  const userPrimary = userStyle ? mapLegacyStyleToPrimary(userStyle) : undefined
+  const userPrimary = userStyle && userStyle !== 'auto' ? mapLegacyStyleToPrimary(userStyle) : undefined
   return userPrimary ?? vision.style_router.selected_style
 }
 
@@ -55,22 +54,21 @@ export function buildPromptFromVisionResult(options: BuildPromptOptions) {
     : ''
 
   return compactJoin([
-    AGNES_BASE_PROMPT,
-    `内容：${vision.prompt_content.subject_phrase || vision.subject.description || vision.subject.category}。${featureText ? `关键特征：${featureText}。` : ''}`,
-    `构图：${vision.prompt_content.composition_phrase || vision.composition.layout || '主体居中近景'}；姿态：${vision.composition.pose || '保持易识别姿态'}；裁切：${vision.composition.crop_strategy || '紧凑裁切'}。`,
-    STYLE_TEMPLATES[effectiveStyle],
-    vision.prompt_content.style_phrase,
-    `像素策略：${vision.pixel_strategy.detail_level}；轮廓：${vision.pixel_strategy.outline}；阴影：${vision.pixel_strategy.shading}。`,
-    `制造规则：最小色块 ${vision.manufacturing_strategy.min_region_size || '至少 2-3 格'}；细线策略 ${vision.manufacturing_strategy.thin_line_policy || '避免 1 像素孤立长线'}；小细节 ${vision.manufacturing_strategy.small_detail_policy || '合并或删除'}；边缘 ${vision.manufacturing_strategy.edge_cleanup || '清理毛边'}；背景 ${vision.manufacturing_strategy.background_policy || (vision.background.remove ? '移除或纯色背景' : '极简背景')}。`,
+    '[AI Prompt Pipeline V2 / Vision-guided Perler Prompt]',
+    `CONTENT：${vision.prompt_content.subject_phrase || vision.subject.description || vision.subject.category}。${featureText ? `关键识别特征：${featureText}。` : ''}`,
+    `COMPOSITION：${vision.prompt_content.composition_phrase || vision.composition.layout || '主体居中近景'}；姿态/动作：${vision.composition.pose || '保持易识别姿态'}；裁切策略：${vision.composition.crop_strategy || '紧凑裁切'}；主体占画面 75-90%。`,
+    `STYLE：${STYLE_TEMPLATES[effectiveStyle]} ${vision.prompt_content.style_phrase || ''}`,
+    `PIXEL RULES：低分辨率像素画源图；每个像素点对应最终图纸中的一格/一颗拼豆；硬边方形像素；无抗锯齿；使用连续大色块。细节等级：${vision.pixel_strategy.detail_level}；轮廓：${vision.pixel_strategy.outline}；阴影：${vision.pixel_strategy.shading}。`,
+    `MANUFACTURING RULES：最小色块 ${vision.manufacturing_strategy.min_region_size || '至少 2-3 格'}；细线策略 ${vision.manufacturing_strategy.thin_line_policy || '避免 1 像素孤立长线'}；小细节 ${vision.manufacturing_strategy.small_detail_policy || '合并或删除'}；边缘 ${vision.manufacturing_strategy.edge_cleanup || '清理毛边'}；背景 ${vision.manufacturing_strategy.background_policy || (vision.background.remove ? '移除或纯色背景' : '极简背景')}。`,
     buildUserConstraints(gridSize, maxColors),
-    userPrompt.trim() ? `用户补充要求：${userPrompt.trim()}。` : undefined,
-    avoidText,
-    NEGATIVE_AS_INSTRUCTION,
+    userPrompt.trim() ? `USER CONSTRAINTS：${userPrompt.trim()}。` : undefined,
+    avoidText ? `AVOID：${avoidText}` : undefined,
+    `NEGATIVE AS INSTRUCTION：${NEGATIVE_AS_INSTRUCTION}`,
   ])
 }
 
 export function getVisionOverrideRisk(vision: VisionPerlerAnalysis, userStyle?: string) {
-  const userPrimary = userStyle ? mapLegacyStyleToPrimary(userStyle) : undefined
+  const userPrimary = userStyle && userStyle !== 'auto' ? mapLegacyStyleToPrimary(userStyle) : undefined
   if (!userPrimary || userPrimary === vision.style_router.selected_style) return ''
   return vision.style_router.override_risk || `已按你选择的风格生成。AI 判断该图片更适合 ${vision.style_router.selected_style} 风格，当前风格可能导致细节丢失。`
 }

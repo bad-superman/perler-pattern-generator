@@ -4,7 +4,7 @@ import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { AGNES_STYLE_PRESETS, buildAgnesPrompt } from './agnes/styles'
-import { buildPromptFromVisionResult, getVisionOverrideRisk } from './agnes/promptBuilder'
+import { buildPromptFromVisionResult, getEffectivePrimaryStyle, getVisionOverrideRisk } from './agnes/promptBuilder'
 import { analyzeImageForPerler } from './agnes/visionClient'
 import { isPromptDebugEnabled, isPromptPipelineV2Enabled, PRIMARY_STYLE_LABELS, type PromptPipelineDebugInfo } from './agnes/visionTypes'
 import { PatternEditor, type EditorTool } from './components/PatternEditor'
@@ -529,6 +529,7 @@ function App() {
   const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
   const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
+  const [aiStyleTouched, setAiStyleTouched] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [isAiGenerating, setIsAiGenerating] = useState(false)
@@ -749,29 +750,36 @@ function App() {
     try {
       const size = await pickAgnesSize(refFile, shape)
       let prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
-      let pipelineInfo: PromptPipelineDebugInfo = { mode: 'legacy', finalPrompt: prompt }
+      let pipelineInfo: PromptPipelineDebugInfo = { mode: 'legacy', finalPrompt: prompt, userStyleOverride: aiStyleTouched ? aiStyleId : undefined }
       let styleRiskHint = ''
 
       if (isPromptPipelineV2Enabled()) {
         try {
+          const userStyleOverride = aiStyleTouched ? aiStyleId : undefined
           const vision = await analyzeImageForPerler({
             file: refFile,
             gridSize,
             maxColors,
-            userStyle: aiStyleId,
+            userStyle: userStyleOverride,
           })
           prompt = buildPromptFromVisionResult({
             vision,
             userPrompt: aiPrompt,
-            userStyle: aiStyleId,
+            userStyle: userStyleOverride,
             gridSize,
             maxColors,
           })
-          styleRiskHint = getVisionOverrideRisk(vision, aiStyleId)
-          pipelineInfo = { mode: 'v2', vision, finalPrompt: prompt }
+          styleRiskHint = getVisionOverrideRisk(vision, userStyleOverride)
+          pipelineInfo = {
+            mode: 'v2',
+            vision,
+            finalPrompt: prompt,
+            effectiveStyle: getEffectivePrimaryStyle(vision, userStyleOverride),
+            userStyleOverride,
+          }
         } catch (visionCause) {
           const fallbackReason = visionCause instanceof Error ? visionCause.message : 'Vision 分析失败，已回退旧提示词'
-          pipelineInfo = { mode: 'v2-fallback', finalPrompt: prompt, fallbackReason }
+          pipelineInfo = { mode: 'v2-fallback', finalPrompt: prompt, userStyleOverride: aiStyleTouched ? aiStyleId : undefined, fallbackReason }
         }
       }
 
@@ -1048,15 +1056,18 @@ function App() {
             <div className="ai-panel">
               <div className="ai-panel-head">
                 <span>AI 风格</span>
-                <small>选择风格后一键生成</small>
+                <small>{aiStyleTouched ? '已按手选风格生成' : '未手动选择时使用 AI 推荐'}</small>
               </div>
               <div className="style-grid">
                 {AGNES_STYLE_PRESETS.map((style) => (
                   <button
                     key={style.id}
                     type="button"
-                    className={`style-card ${aiStyleId === style.id ? 'active' : ''}`}
-                    onClick={() => setAiStyleId(style.id)}
+                    className={`style-card ${aiStyleTouched && aiStyleId === style.id ? 'active' : ''}`}
+                    onClick={() => {
+                      setAiStyleId(style.id)
+                      setAiStyleTouched(true)
+                    }}
                   >
                     <strong>{style.label}</strong>
                     <span>{style.description}</span>

@@ -44,9 +44,9 @@ function normalizeVisionAnalysis(value: unknown, userStyle?: string): VisionPerl
   const manufacturingStrategy = asRecord(root.manufacturing_strategy)
   const feasibility = asRecord(root.feasibility)
   const promptContent = asRecord(root.prompt_content)
-  const fallbackStyle = userStyle ? mapLegacyStyleToPrimary(userStyle) : 'limited_palette'
+  const fallbackStyle = userStyle && userStyle !== 'auto' ? mapLegacyStyleToPrimary(userStyle) : 'limited_palette'
 
-  return {
+  const analysis: VisionPerlerAnalysis = {
     subject: {
       category: asString(subject.category, '参考图主体'),
       description: asString(subject.description, '参考图中的主要主体'),
@@ -102,6 +102,27 @@ function normalizeVisionAnalysis(value: unknown, userStyle?: string): VisionPerl
       avoid_phrases: asStringArray(promptContent.avoid_phrases),
     },
   }
+
+  const portraitSignals = [
+    analysis.subject.category,
+    analysis.subject.description,
+    ...analysis.visual_features.shape_features,
+    ...analysis.visual_features.identity_features,
+    analysis.prompt_content.subject_phrase,
+    ...analysis.prompt_content.feature_phrases,
+  ].join(' ')
+  const isPortrait = /人|人物|人像|肖像|男孩|女孩|少年|少女|儿童|孩子|脸|面部|眼睛|头发|发型|托腮|portrait|face|boy|girl|child/i.test(portraitSignals)
+  if (isPortrait && (!userStyle || userStyle === 'auto')) {
+    const originalStyle = analysis.style_router.selected_style
+    analysis.style_router.selected_style = 'chibi'
+    analysis.style_router.confidence = Math.max(analysis.style_router.confidence, 0.85)
+    analysis.style_router.reason = analysis.style_router.reason
+      ? `检测到人物/肖像主体，产品规则优先推荐 chibi；原模型推荐 ${originalStyle}：${analysis.style_router.reason}`
+      : `检测到人物/肖像主体，产品规则优先推荐 chibi；原模型推荐 ${originalStyle}`
+    analysis.style_router.alternatives = Array.from(new Set([originalStyle, ...analysis.style_router.alternatives].filter((item) => item !== 'chibi')))
+  }
+
+  return analysis
 }
 
 function normalizeAnalysis(value: unknown, userStyle?: string): VisionPerlerAnalysis {
@@ -117,7 +138,7 @@ export async function analyzeImageForPerler(options: VisionRequestOptions): Prom
   form.append('image', options.file)
   form.append('gridSize', String(options.gridSize))
   form.append('maxColors', String(options.maxColors))
-  form.append('userStyle', options.userStyle)
+  form.append('userStyle', options.userStyle ?? 'auto')
 
   const response = await fetch('/api/agnes/analyze', {
     method: 'POST',
