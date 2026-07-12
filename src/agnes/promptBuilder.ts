@@ -9,6 +9,7 @@ interface BuildPromptOptions {
   userPrompt?: string
   userStyle?: string
   gridSize?: number
+  gridRows?: number
   maxColors?: number
 }
 
@@ -16,21 +17,60 @@ interface BuildPromptPipelineV2Options {
   styleId: string
   userPrompt?: string
   gridSize?: number
+  gridRows?: number
   maxColors?: number
 }
 
 const STYLE_TEMPLATES: Record<AiPrimaryStyle, string> = {
-  chibi: '可爱 Q 版像素画风格，头身比适度夸张，圆润造型，表情简化友好，保留参考图主要造型特征。',
-  retro_8bit: '复古 8-bit 像素画风格，轮廓清晰，块状造型，高对比，类似经典游戏素材。',
-  pixel_icon: '干净的像素图标风格，主体居中，剪影明确，几何化简化，大色块，极简背景，小尺寸也容易识别。',
-  limited_palette: '有限色板像素画风格，清晰轮廓，简化造型，连续大色块，硬边缘，适合后续拼豆量化。',
+  chibi: 'Chibi pixel art，Q版大头比例，kawaii，可爱，配色明亮。',
+  retro_8bit: 'Retro 8-bit pixel art，NES sprite 风格，低分辨率，高对比，游戏感。',
+  pixel_icon: 'Pixel icon art，icon sprite 风格，简洁，主体清晰，剪影明确。',
+  limited_palette: 'Limited palette pixel art，clean pixel clusters，色块清晰，轮廓明确。',
 }
 
-const SYSTEM_PROMPT = [
-  '请根据参考图生成一张适合后续转换为拼豆图纸的像素画源图。',
-  '重点是主体清晰、轮廓明确、大色块、少细节，方便后续裁切、缩放、限色和映射到真实拼豆色卡。',
-  '不要追求照片级还原，也不要生成真实拼豆成品图。',
-].join(' ')
+const SYSTEM_PROMPT = `您是一位专业的像素艺术设计师，专门创作可用于生产的拼豆图案。
+
+您的目标不是创作逼真的插图。
+您的目标是在N*M网格内将图像转换为清晰、简洁的像素设计，并将其转化为实际的拼豆图案。
+
+请遵循以下原则：
+1. 像素结构 - 每个视觉元素都必须与像素网格对齐。
+- 每个像素代表一颗实物拼豆。
+- 使用清晰的像素簇，而不是平滑的形状。
+- 在低分辨率下保持可识别的轮廓。
+
+2. 色彩管理
+- 使用有限的调色板。
+- 优先使用纯色区域。
+- 避免使用渐变色。
+- 避免使用细微的颜色过渡。
+- 每个颜色区域应包含相连的像素区域。
+
+3. 生产限制
+- 设计必须能够打印成拼豆图表。
+- 除非必要，否则避免使用孤立的单个像素。
+- 避免使用小于一个像素的细线。
+- 避免使用无法复制的过多细节。
+
+4. 图像简化
+- 优先考虑：
+> 1. 轮廓
+> 2. 面部/五官
+> 3. 主要颜色
+> 4. 重要配饰
+- 移除：
+> 1. 背景噪点
+> 2. 纹理
+> 3. 逼真的光照
+> 4. 不必要的细节
+
+5. 视觉风格
+- 使用干净的像素簇。
+- 使用锐利的边缘。
+- 精心设计像素位置。
+- 不使用抗锯齿。
+
+始终优化为：“易于识别 + 美观 + 易于生产”。`
 
 const NEGATIVE_AS_INSTRUCTION = [
   '避免照片质感、真实拼豆、底板、网格线、文字、水印、复杂背景、噪点纹理、细碎小元素、脆弱细线和过多渐变。',
@@ -40,27 +80,14 @@ function compactJoin(parts: Array<string | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join('\n\n')
 }
 
-function buildCraftConstraints(gridSize?: number, maxColors?: number) {
-  const parts: string[] = [
-    '使用宽大的形状、干净边缘和连续色块。',
-    '保留参考图最重要的视觉特征，不做照片级复刻。',
-    '简化发型、服装图案、手部、表情、小标记和配饰，让它们在缩小成拼豆格后仍然可读。',
-    '使用纯色或极简背景。'
-  ]
-
+function buildCraftConstraints(gridSize?: number, gridRows?: number, maxColors?: number) {
+  const parts: string[] = []
   if (gridSize) {
-    parts.push(`最终拼豆图纸大约是 ${gridSize} 格宽，请按这个小尺寸设计，让缩小和量化后仍然容易识别。`)
-    if (gridSize <= 32) {
-      parts.push('这是很小的图纸，请使用图标级简化、强轮廓和最必要的视觉特征。')
-    } else if (gridSize <= 56) {
-      parts.push('请按小图纸简化，避免缩放后会消失的细微表情、小纹理和细线。')
-    }
+    parts.push(`网格大小：${gridSize}×${gridRows ?? gridSize}。`)
   }
-
   if (maxColors) {
-    parts.push(`主要颜色控制在约 ${maxColors} 种以内，使用区分明显的颜色，避免大量相近色。`)
+    parts.push(`配色数量：小于等于 ${maxColors} 种。`)
   }
-
   return parts.join(' ')
 }
 

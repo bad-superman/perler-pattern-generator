@@ -751,10 +751,13 @@ function App() {
       let pipelineInfo: PromptPipelineDebugInfo = { mode: 'legacy', finalPrompt: prompt, userStyleOverride: aiStyleId }
 
       if (isPromptPipelineV2Enabled()) {
+        const refImage = await loadImage(refFile)
+        const promptGrid = fitGridToImage(refImage, gridSize, shape)
         prompt = buildPromptPipelineV2({
           styleId: aiStyleId,
           userPrompt: aiPrompt,
-          gridSize,
+          gridSize: promptGrid.cols,
+          gridRows: promptGrid.rows,
           maxColors,
         })
         pipelineInfo = {
