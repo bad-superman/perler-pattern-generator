@@ -3,9 +3,7 @@ import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCirc
 import { saveAs } from 'file-saver'
 import { generateAgnesImage, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
-import { AGNES_STYLE_PRESETS, buildAgnesPrompt } from './agnes/styles'
-import { buildPromptPipelineV2, getEffectivePrimaryStyleFromLegacy } from './agnes/promptBuilder'
-import { isPromptDebugEnabled, isPromptPipelineV2Enabled, PRIMARY_STYLE_LABELS, type PromptPipelineDebugInfo } from './agnes/visionTypes'
+import { AGNES_STYLE_PRESETS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt } from './agnes/styles'
 import { PatternEditor, type EditorTool } from './components/PatternEditor'
 import { usePatternHistory } from './hooks/usePatternHistory'
 import {
@@ -35,6 +33,7 @@ type PreviewMode = 'view' | 'edit'
 const DEFAULT_GRID_SIZE = 52
 const AI_DEFAULT_GRID_SIZE = 52
 const AI_GRID_RECOMMEND_MAX = 56
+const MAX_COLOR_LIMIT = 50
 const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
 const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
@@ -46,7 +45,6 @@ const GUIDE_BLOCK_SIZE = 5
 function readDebugModeFromUrl() {
   if (typeof window === 'undefined') return false
   const value = new URLSearchParams(window.location.search).get('debug')
-  if (isPromptDebugEnabled()) return true
   if (value === null) return false
   return !['0', 'false', 'off', 'no'].includes(value.trim().toLowerCase())
 }
@@ -505,7 +503,7 @@ function App() {
   const [boardRowsInput, setBoardRowsInput] = useState(DEFAULT_GRID_SIZE)
   const [gridCols, setGridCols] = useState(DEFAULT_GRID_SIZE)
   const [gridRows, setGridRows] = useState(DEFAULT_GRID_SIZE)
-  const [maxColors, setMaxColors] = useState(24)
+  const [maxColors, setMaxColors] = useState(MAX_COLOR_LIMIT)
   const [shape, setShape] = useState<BoardShape>('ratio')
   const [renderMode, setRenderMode] = useState<RenderMode>('symbols')
   const {
@@ -529,6 +527,9 @@ function App() {
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
   const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
   const [aiPrompt, setAiPrompt] = useState('')
+  const [aiNegativePrompt, setAiNegativePrompt] = useState(DEFAULT_NEGATIVE_PROMPT)
+  const [effectReferenceName, setEffectReferenceName] = useState('')
+  const [effectReferencePreview, setEffectReferencePreview] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [isAiGenerating, setIsAiGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -536,15 +537,15 @@ function App() {
   const [error, setError] = useState('')
   const [debugMode, setDebugMode] = useState(readDebugModeFromUrl)
   const [debugPrompt, setDebugPrompt] = useState('')
-  const [debugPipelineInfo, setDebugPipelineInfo] = useState<PromptPipelineDebugInfo | null>(null)
-  const [aiStyleRiskHint, setAiStyleRiskHint] = useState('')
   const [debugAiImageUrl, setDebugAiImageUrl] = useState('')
   const patternRef = useRef<HTMLDivElement>(null)
   const paperViewportRef = useRef<HTMLDivElement>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
+  const effectReferenceRef = useRef<HTMLInputElement>(null)
   const lastSourceFileRef = useRef<File | null>(null)
   const exportNoticeTimerRef = useRef<number | null>(null)
   const debugAiImageUrlRef = useRef('')
+  const effectReferencePreviewRef = useRef('')
   const [paperScale, setPaperScale] = useState(1)
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
@@ -553,6 +554,7 @@ function App() {
   const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
   const activePaletteColors = useMemo(() => getPaletteColors(paletteBrand), [paletteBrand])
   const activePaletteSize = useMemo(() => getPaletteSize(paletteBrand), [paletteBrand])
+  const colorSliderMax = Math.min(activePaletteSize, MAX_COLOR_LIMIT)
   const gridSizeHint = useMemo(() => getGridSizeHint(gridSize), [gridSize])
   const replaceAffectedCount = useMemo(
     () => (replaceFromSymbol ? countCellsWithSymbol(pattern, replaceFromSymbol) : 0),
@@ -607,6 +609,7 @@ function App() {
   useEffect(() => () => {
     if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
     if (debugAiImageUrlRef.current) URL.revokeObjectURL(debugAiImageUrlRef.current)
+    if (effectReferencePreviewRef.current) URL.revokeObjectURL(effectReferencePreviewRef.current)
   }, [])
 
   useEffect(() => {
@@ -626,6 +629,24 @@ function App() {
     if (debugAiImageUrlRef.current) URL.revokeObjectURL(debugAiImageUrlRef.current)
     debugAiImageUrlRef.current = ''
     setDebugAiImageUrl('')
+  }
+
+
+  function clearEffectReference() {
+    if (effectReferencePreviewRef.current) URL.revokeObjectURL(effectReferencePreviewRef.current)
+    effectReferencePreviewRef.current = ''
+    setEffectReferenceName('')
+    setEffectReferencePreview('')
+    if (effectReferenceRef.current) effectReferenceRef.current.value = ''
+  }
+
+  function handleEffectReferenceFile(file?: File) {
+    if (!file) return
+    if (effectReferencePreviewRef.current) URL.revokeObjectURL(effectReferencePreviewRef.current)
+    const url = URL.createObjectURL(file)
+    effectReferencePreviewRef.current = url
+    setEffectReferenceName(file.name)
+    setEffectReferencePreview(url)
   }
 
 
@@ -747,71 +768,22 @@ function App() {
     setIsAiGenerating(true)
     try {
       const size = await pickAgnesSize(refFile, shape)
-      let prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
-      let pipelineInfo: PromptPipelineDebugInfo = { mode: 'legacy', finalPrompt: prompt, userStyleOverride: aiStyleId }
-
-      if (isPromptPipelineV2Enabled()) {
-        const refImage = await loadImage(refFile)
-        const promptGrid = fitGridToImage(refImage, gridSize, shape)
-        prompt = buildPromptPipelineV2({
-          styleId: aiStyleId,
-          userPrompt: aiPrompt,
-          gridSize: promptGrid.cols,
-          gridRows: promptGrid.rows,
-          maxColors,
-        })
-        pipelineInfo = {
-          mode: 'v2',
-          finalPrompt: prompt,
-          effectiveStyle: getEffectivePrimaryStyleFromLegacy(aiStyleId),
-          userStyleOverride: aiStyleId,
-        }
-      }
-
-      setAiStyleRiskHint('')
+      const effectFile = effectReferenceRef.current?.files?.[0]
+      const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors, aiNegativePrompt, Boolean(effectFile))
       if (debugMode) {
         setDebugPrompt(prompt)
-        setDebugPipelineInfo(pipelineInfo)
         clearDebugAiImage()
       }
-      let aiFile: File
-      try {
-        aiFile = await generateAgnesImage({
-          file: refFile,
-          styleId: aiStyleId,
-          extraPrompt: aiPrompt,
-          gridSize,
-          maxColors,
-          size,
-          prompt,
-        })
-      } catch (generateCause) {
-        const message = generateCause instanceof Error ? generateCause.message : ''
-        const shouldRetryLegacy = isPromptPipelineV2Enabled() && /unable to generate|modify your prompt|content/i.test(message)
-        if (!shouldRetryLegacy) throw generateCause
-
-        const legacyPrompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors)
-        pipelineInfo = {
-          mode: 'v2-fallback',
-          finalPrompt: legacyPrompt,
-          userStyleOverride: aiStyleId,
-          fallbackReason: `V2 prompt was rejected by the image model, retried with legacy prompt: ${message}`,
-        }
-        prompt = legacyPrompt
-        if (debugMode) {
-          setDebugPrompt(prompt)
-          setDebugPipelineInfo(pipelineInfo)
-        }
-        aiFile = await generateAgnesImage({
-          file: refFile,
-          styleId: aiStyleId,
-          extraPrompt: aiPrompt,
-          gridSize,
-          maxColors,
-          size,
-          prompt,
-        })
-      }
+      const aiFile = await generateAgnesImage({
+        file: refFile,
+        styleId: aiStyleId,
+        extraPrompt: aiPrompt,
+        gridSize,
+        maxColors,
+        size,
+        prompt,
+        effectFile,
+      })
       if (debugMode) updateDebugAiImage(aiFile)
       const croppedFile = await cropSubjectFromImage(aiFile)
       await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
@@ -819,7 +791,6 @@ function App() {
         sharpQuantize: true,
       })
     } catch (cause) {
-      setAiStyleRiskHint('')
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
     } finally {
       setIsAiGenerating(false)
@@ -937,7 +908,7 @@ function App() {
       setError('请先完成编辑，再切换色号品牌')
       return
     }
-    const nextMaxColors = Math.min(maxColors, getPaletteSize(brand))
+    const nextMaxColors = Math.min(maxColors, getPaletteSize(brand), MAX_COLOR_LIMIT)
     setPaletteBrand(brand)
     setMaxColors(nextMaxColors)
     void regenerate(gridSize, nextMaxColors, shape, brand)
@@ -1031,6 +1002,7 @@ function App() {
           </div>
 
           <input ref={uploadRef} type="file" accept="image/*" hidden onChange={(event) => void handleFile(event.target.files?.[0])} />
+          <input ref={effectReferenceRef} type="file" accept="image/*" hidden onChange={(event) => handleEffectReferenceFile(event.target.files?.[0])} />
           {sourceMode !== 'board' ? (
             <button className="upload-zone" type="button" onClick={() => uploadRef.current?.click()}>
               {sourcePreview ? <img src={sourcePreview} alt="上传预览" /> : <ImageUp size={34} />}
@@ -1085,11 +1057,18 @@ function App() {
                   </button>
                 ))}
               </div>
-              {aiStyleRiskHint && (
-                <div className="ai-risk-hint" role="status">
-                  {aiStyleRiskHint}
-                </div>
-              )}
+              <div className="effect-reference-panel">
+                <button className="effect-reference-upload" type="button" onClick={() => effectReferenceRef.current?.click()}>
+                  {effectReferencePreview ? <img src={effectReferencePreview} alt="效果参考图预览" /> : <ImageUp size={24} />}
+                  <span>{effectReferenceName || '添加效果参考图（选填）'}</span>
+                  <small>只参考风格、色块、轮廓和简化程度，不作为主体</small>
+                </button>
+                {effectReferencePreview && (
+                  <button className="ghost-btn effect-reference-clear" type="button" onClick={clearEffectReference}>
+                    移除效果参考图
+                  </button>
+                )}
+              </div>
               <label className="ai-prompt-field">
                 <span>补充描述（选填）</span>
                 <textarea
@@ -1098,6 +1077,16 @@ function App() {
                   placeholder="例如：放大主体、减少留白；只要人物、不要背景文字"
                   value={aiPrompt}
                   onChange={(event) => setAiPrompt(event.target.value)}
+                />
+              </label>
+              <label className="ai-prompt-field">
+                <span>负面提示词</span>
+                <textarea
+                  className="ai-prompt-input"
+                  rows={2}
+                  placeholder="例如：不要背景色、不要文字、不要水印"
+                  value={aiNegativePrompt}
+                  onChange={(event) => setAiNegativePrompt(event.target.value)}
                 />
               </label>
               <button
@@ -1151,7 +1140,7 @@ function App() {
             <>
               <label>
                 <span>最大颜色数 <b>{maxColors}</b></span>
-                <input type="range" min="4" max={activePaletteSize} step="1" value={maxColors} onChange={(event) => {
+                <input type="range" min="4" max={colorSliderMax} step="1" value={maxColors} onChange={(event) => {
                   const value = Number(event.target.value)
                   setMaxColors(value)
                   void regenerate(gridSize, value, shape)
@@ -1334,30 +1323,6 @@ function App() {
         <details className="debug-panel" open>
           <summary>AI 调试模式</summary>
           <div className="debug-content">
-            <section>
-              <h2>Pipeline</h2>
-              {debugPipelineInfo ? (
-                <pre>{JSON.stringify({ ...debugPipelineInfo, finalPrompt: undefined }, null, 2)}</pre>
-              ) : (
-                <p>生成一次 AI 拼豆图后会显示 Pipeline 状态。</p>
-              )}
-            </section>
-            {debugPipelineInfo?.vision && (
-              <section>
-                <h2>Vision JSON</h2>
-                <pre>{JSON.stringify(debugPipelineInfo.vision, null, 2)}</pre>
-              </section>
-            )}
-            {debugPipelineInfo?.vision && (
-              <section>
-                <h2>Style Router / Feasibility</h2>
-                <pre>{JSON.stringify({
-                  selectedStyle: PRIMARY_STYLE_LABELS[debugPipelineInfo.vision.style_router.selected_style],
-                  ...debugPipelineInfo.vision.style_router,
-                  feasibility: debugPipelineInfo.vision.feasibility,
-                }, null, 2)}</pre>
-              </section>
-            )}
             <section>
               <h2>AI 完整提示词</h2>
               {debugPrompt ? (

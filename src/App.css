@@ -1517,3 +1517,55 @@ h1 {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.effect-reference-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.effect-reference-upload {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px dashed rgba(23, 19, 31, 0.22);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.effect-reference-upload:hover {
+  border-color: rgba(104, 68, 236, 0.42);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.effect-reference-upload img,
+.effect-reference-upload svg {
+  grid-row: span 2;
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(104, 68, 236, 0.08);
+}
+
+.effect-reference-upload span {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.effect-reference-upload small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.effect-reference-clear {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12px;
+}

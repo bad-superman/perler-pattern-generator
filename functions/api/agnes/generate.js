@@ -37,7 +37,7 @@ async function blobToDataUri(blob) {
   return `data:${mimeType};base64,${bytesToBase64(bytes)}`
 }
 
-async function callAgnes({ prompt, size, imageDataUri, env }) {
+async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri, env }) {
   const apiKey = env?.AGNES_API_KEY ?? ''
   const apiBase = env?.AGNES_API_BASE ?? DEFAULT_API_BASE
   const model = env?.AGNES_MODEL ?? DEFAULT_MODEL
@@ -53,8 +53,9 @@ async function callAgnes({ prompt, size, imageDataUri, env }) {
     },
   }
 
-  if (imageDataUri) {
-    body.extra_body.image = [imageDataUri]
+  const inputImages = [imageDataUri, effectImageDataUri].filter(Boolean)
+  if (inputImages.length > 0) {
+    body.extra_body.image = inputImages
   } else {
     body.return_base64 = true
   }
@@ -90,18 +91,26 @@ async function handlePost(context) {
   const prompt = String(formData.get('prompt') ?? '').trim()
   const size = String(formData.get('size') ?? '1024x1024').trim() || '1024x1024'
   const image = formData.get('image')
+  const effectImage = formData.get('effectImage')
 
   if (!prompt) return jsonResponse(400, { error: '缺少 prompt 参数' })
 
   let imageDataUri
+  let effectImageDataUri
   if (isUpload(image)) {
     if (image.size > MAX_IMAGE_BYTES) {
       return jsonResponse(400, { error: '图片过大，请上传 8MB 以内的图片' })
     }
     imageDataUri = await blobToDataUri(image)
   }
+  if (isUpload(effectImage)) {
+    if (effectImage.size > MAX_IMAGE_BYTES) {
+      return jsonResponse(400, { error: '效果参考图过大，请上传 8MB 以内的图片' })
+    }
+    effectImageDataUri = await blobToDataUri(effectImage)
+  }
 
-  const result = await callAgnes({ prompt, size, imageDataUri, env: context.env })
+  const result = await callAgnes({ prompt, size, imageDataUri, effectImageDataUri, env: context.env })
   return jsonResponse(200, result)
 }
 

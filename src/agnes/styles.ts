@@ -47,6 +47,8 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
   },
 ]
 
+export const DEFAULT_NEGATIVE_PROMPT = '不要背景色'
+
 function buildPixelSpecPrompt(gridSize?: number, maxColors?: number) {
   const parts: string[] = []
   if (gridSize) {
@@ -63,17 +65,22 @@ function buildPixelSpecPrompt(gridSize?: number, maxColors?: number) {
   return parts.join(' ')
 }
 
-export function buildAgnesPrompt(styleId: string, extraPrompt = '', gridSize?: number, maxColors?: number) {
+export function buildAgnesPrompt(styleId: string, extraPrompt = '', gridSize?: number, maxColors?: number, negativePrompt = DEFAULT_NEGATIVE_PROMPT, hasEffectReference = false) {
   const style = AGNES_STYLE_PRESETS.find((item) => item.id === styleId)
   if (!style) throw new Error('请选择一种 AI 风格')
 
   const parts = [AGNES_BASE_PROMPT, style.promptSuffix]
   const pixelSpecPrompt = buildPixelSpecPrompt(gridSize, maxColors)
   if (pixelSpecPrompt) parts.push(pixelSpecPrompt)
+  if (hasEffectReference) {
+    parts.push('本次输入包含两张参考图：第一张是主体参考图，请保留第一张图中的主体、轮廓、姿态和主要特征；第二张是效果参考图，只参考它的像素画风格、色块大小、轮廓处理、简化程度、构图密度和颜色控制方式。不要复制第二张图中的主体、文字、背景或具体内容，最终输出仍以第一张主体参考图为准。')
+  }
   const trimmedExtra = extraPrompt.trim()
   if (trimmedExtra) parts.push(trimmedExtra)
   parts.push(
     '最终输出要求：这是一张用于后续量化的像素画源图。请保证像素块边界清楚、色块连续、轮廓明确；不要输出平滑插画、高清照片、复杂背景、文字、水印、边框或装饰网格。构图要求：近景、紧凑裁切，主体居中，主体占画面 75-90%。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。',
   )
+  const trimmedNegative = negativePrompt.trim()
+  if (trimmedNegative) parts.push(`负面提示词：${trimmedNegative}。`)
   return parts.join(' ')
 }

@@ -2,12 +2,15 @@ import { buildAgnesPrompt } from './styles'
 
 interface GenerateAgnesImageOptions {
   file?: File
+  effectFile?: File
   styleId: string
   extraPrompt?: string
   gridSize?: number
   maxColors?: number
   size?: string
   prompt?: string
+  negativePrompt?: string
+  hasEffectReference?: boolean
 }
 
 interface AgnesGenerateResponse {
@@ -35,12 +38,13 @@ async function responseToFile(payload: AgnesGenerateResponse, styleId: string): 
 }
 
 export async function generateAgnesImage(options: GenerateAgnesImageOptions): Promise<File> {
-  const prompt = options.prompt ?? buildAgnesPrompt(options.styleId, options.extraPrompt, options.gridSize, options.maxColors)
+  const prompt = options.prompt ?? buildAgnesPrompt(options.styleId, options.extraPrompt, options.gridSize, options.maxColors, options.negativePrompt, options.hasEffectReference ?? Boolean(options.effectFile))
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('styleId', options.styleId)
   if (options.size) form.append('size', options.size)
   if (options.file) form.append('image', options.file)
+  if (options.effectFile) form.append('effectImage', options.effectFile)
 
   const response = await fetch('/api/agnes/generate', {
     method: 'POST',
