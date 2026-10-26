@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { BeadLogo } from '../components/BeadLogo'
 import { PatternEditor, type EditorTool } from '../components/PatternEditor'
 import { PatternZoomView } from '../components/PatternZoomView'
 import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, type AiFraming } from '../agnes/styles'
@@ -92,6 +93,82 @@ export interface MobileLayoutProps {
   downloadSheet: () => void
   error: string
   promoUrl: string
+  promoImage: string
+}
+
+function AboutPage() {
+  return (
+    <section className="m-card m-about">
+      <h2>关于</h2>
+      <BeadLogo size={72} />
+      <p>拼豆是把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。上传图片后，可以在手机上直接生成色号图纸、调整颜色，并保存到相册。</p>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备2024067456号-3</a>
+    </section>
+  )
+}
+
+const PROMO_SLIDES = [
+  { key: 'kit', image: '', label: '融豆拼拼 2.6mm 全色套装' },
+]
+
+function PromoCarousel({ promoUrl, promoImage }: { promoUrl: string; promoImage: string }) {
+  const slides = PROMO_SLIDES.map((slide) => ({ ...slide, image: slide.image || promoImage }))
+  const [index, setIndex] = useState(0)
+  const [phase, setPhase] = useState<'idle' | 'move' | 'reset'>('idle')
+  const active = slides[index] ?? slides[0]
+  const upcoming = slides[(index + 1) % slides.length] ?? active
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setPhase('move'), 4000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'move') return undefined
+    const timer = window.setTimeout(() => setPhase('reset'), 460)
+    return () => window.clearTimeout(timer)
+  }, [phase])
+
+  useEffect(() => {
+    if (phase !== 'reset') return undefined
+    setIndex((current) => (current + 1) % slides.length)
+    const frame = window.requestAnimationFrame(() => setPhase('idle'))
+    return () => window.cancelAnimationFrame(frame)
+  }, [phase, slides.length])
+
+  function step(direction: 1 | -1) {
+    setIndex((current) => (current + (direction === 1 ? 1 : slides.length - 1)) % slides.length)
+    setPhase('idle')
+  }
+
+  return (
+    <section className="m-card m-promo" aria-label="推广" aria-roledescription="carousel">
+      <a href={promoUrl} target="_blank" rel="noopener noreferrer">
+        <div
+          className="m-promo-frame"
+          onTouchStart={(event) => { event.currentTarget.dataset.x = String(event.changedTouches[0]?.clientX ?? 0) }}
+          onTouchEnd={(event) => {
+            const start = Number(event.currentTarget.dataset.x ?? 0)
+            const delta = (event.changedTouches[0]?.clientX ?? start) - start
+            if (Math.abs(delta) < 40) return
+            step(delta < 0 ? 1 : -1)
+          }}
+        >
+          <div className={`m-promo-track ${phase === 'move' ? 'is-moving' : ''}`}>
+            <img src={active.image} alt={active.label} />
+            <img src={upcoming.image} alt="" />
+          </div>
+          <span className="m-promo-badge">推广</span>
+        </div>
+        <strong>{active.label}</strong>
+      </a>
+      <div className="m-promo-dots">
+        {slides.map((slide, slideIndex) => (
+          <button key={slide.key} type="button" className={slideIndex === index % slides.length ? 'active' : ''} aria-label={slide.label} onClick={() => { setIndex(slideIndex); setPhase('idle') }} />
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function isDark(hex: string) {
@@ -101,6 +178,8 @@ function isDark(hex: string) {
 export function MobileLayout(props: MobileLayoutProps) {
   const [moreSettings, setMoreSettings] = useState(false)
   const [moreAi, setMoreAi] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [page, setPage] = useState<'app' | 'about'>('app')
   const [legendOpen, setLegendOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false)
   const [customSize, setCustomSize] = useState(String(props.gridSize))
@@ -137,16 +216,39 @@ export function MobileLayout(props: MobileLayoutProps) {
     if (props.sourceMode !== 'board') props.regenerate(props.gridSize, value, props.shape)
   }
 
+  const modeLabel = props.sourceMode === 'ai' ? 'AI 生成' : props.sourceMode === 'board' ? '画板绘制' : '本地转换'
+
   return (
-    <main className={`m-shell ${hasPattern && !props.isEditing ? 'has-bar' : ''}`}>
+    <main className={`m-shell ${hasPattern && !props.isEditing && page === 'app' ? 'has-bar' : ''}`}>
       <header className="m-appbar">
-        <strong>拼豆图纸</strong>
-        <div className="m-modes" role="group" aria-label="生成方式">
-          {([['local', '本地'], ['ai', 'AI'], ['board', '画板']] as const).map(([id, label]) => (
-            <button key={id} type="button" className={props.sourceMode === id ? 'active' : ''} onClick={() => props.switchSourceMode(id)}>{label}</button>
-          ))}
+        <div className="m-brand">
+          <BeadLogo size={28} />
+          <strong>拼豆图纸</strong>
         </div>
+        <button className="m-menu-btn" type="button" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+          {page === 'about' ? '关于' : modeLabel}
+        </button>
+        {menuOpen && (
+          <>
+            <button className="m-menu-backdrop" type="button" aria-label="关闭菜单" onClick={() => setMenuOpen(false)} />
+            <div className="m-menu" role="menu">
+              {([['local', '本地转换'], ['ai', 'AI 生成'], ['board', '画板绘制']] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="menuitem"
+                  className={page === 'app' && props.sourceMode === id ? 'active' : ''}
+                  onClick={() => { props.switchSourceMode(id); setPage('app'); setMenuOpen(false) }}
+                >
+                  {label}
+                </button>
+              ))}
+              <button type="button" role="menuitem" className={page === 'about' ? 'active' : ''} onClick={() => { setPage('about'); setMenuOpen(false) }}>关于</button>
+            </div>
+          </>
+        )}
       </header>
+      {page === 'about' ? <AboutPage /> : <>
 
       <section className="m-card m-source">
         {props.sourceMode !== 'board' && (
@@ -331,12 +433,10 @@ export function MobileLayout(props: MobileLayoutProps) {
         )}
       </section>
 
-      <section className="m-card">
-        <p className="m-stats">拼豆是什么？把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型。</p>
-        <a className="m-ad" href={props.promoUrl}>推荐：融豆拼拼 2.6mm 全色套装 →</a>
-      </section>
+      <PromoCarousel promoUrl={props.promoUrl} promoImage={props.promoImage} />
+      </>}
 
-      {hasPattern && !props.isEditing && (
+      {page === 'app' && hasPattern && !props.isEditing && (
         <div className="m-actionbar">
           <button className="m-secondary" type="button" onClick={props.onGenerate} disabled={props.isProcessing || props.isAiGenerating}>重新生成</button>
           <button className="m-secondary" type="button" onClick={props.enterEdit}>编辑</button>

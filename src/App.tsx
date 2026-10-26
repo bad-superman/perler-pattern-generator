@@ -1028,6 +1028,7 @@ function App() {
         downloadSheet={() => saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)}
         error={error}
         promoUrl={PROMO_AD_URL}
+        promoImage={PROMO_AD_IMAGE}
       />
       </>
     )
