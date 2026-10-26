@@ -1620,7 +1620,28 @@ h1 {
   }
 
   .editor-history-actions {
-    display: none;
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    z-index: 46;
+    display: flex;
+    gap: 8px;
+    transform: translateX(-50%);
+  }
+
+  .editor-history-actions .editor-history-btn {
+    height: 36px;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(29, 26, 35, 0.76);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(30, 24, 42, 0.16);
+  }
+
+  .editor-history-actions .editor-history-btn:disabled {
+    opacity: 0.45;
   }
 
   .editor-grid-viewport {
