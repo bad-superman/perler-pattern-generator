@@ -4,8 +4,10 @@ import { saveAs } from 'file-saver'
 import { generateAgnesImages, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { prepareReferenceImage } from './agnes/prepareReference'
-import { AGNES_STYLE_PRESETS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt } from './agnes/styles'
+import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt, type AiFraming } from './agnes/styles'
+import { useMediaQuery } from './hooks/useMediaQuery'
 import { PatternEditor, type EditorTool } from './components/PatternEditor'
+import { PatternZoomView } from './components/PatternZoomView'
 import { usePatternHistory } from './hooks/usePatternHistory'
 import {
   applyStroke,
@@ -190,6 +192,19 @@ function formatExportError(cause: unknown) {
     return String((cause as { message: unknown }).message)
   }
   return '浏览器资源限制或内存不足'
+}
+
+function limitExportCanvas(source: HTMLCanvasElement, maxSide: number) {
+  const longSide = Math.max(source.width, source.height)
+  if (longSide <= maxSide) return source
+  const scale = maxSide / longSide
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(source.width * scale))
+  canvas.height = Math.max(1, Math.round(source.height * scale))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return source
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
+  return canvas
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png') {
@@ -384,7 +399,9 @@ function App() {
   const [gridRows, setGridRows] = useState(DEFAULT_GRID_SIZE)
   const [maxColors, setMaxColors] = useState(MAX_COLOR_LIMIT)
   const [shape, setShape] = useState<BoardShape>('ratio')
-  const [renderMode, setRenderMode] = useState<RenderMode>('symbols')
+  const [renderMode, setRenderMode] = useState<RenderMode>(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 620px)').matches ? 'solid' : 'symbols'
+  ))
   const {
     pattern,
     palette,
@@ -407,6 +424,13 @@ function App() {
   const [cleanupIsolated, setCleanupIsolated] = useState(true)
   const [dither, setDither] = useState<DitherMode>('off')
   const [aiCandidateCount, setAiCandidateCount] = useState(1)
+  const [aiFraming, setAiFraming] = useState<AiFraming>('follow')
+  const [aiStage, setAiStage] = useState('AI 创作中，完成后将自动量化成拼豆图纸…')
+  const [legendExpanded, setLegendExpanded] = useState(false)
+  const [zoomOpen, setZoomOpen] = useState(false)
+  const [boardConfirm, setBoardConfirm] = useState(false)
+  const [exportSheetUrl, setExportSheetUrl] = useState('')
+  const isMobile = useMediaQuery('(max-width: 620px)')
   const [aiCandidates, setAiCandidates] = useState<Array<{ url: string; file: File }>>([])
   const [aiCandidateIndex, setAiCandidateIndex] = useState(0)
   const quantizeRef = useRef({ removeBackground: true, cleanupIsolated: true, dither: 'off' as DitherMode })
@@ -425,6 +449,7 @@ function App() {
   const [debugPrompt, setDebugPrompt] = useState('')
   const [debugAiImageUrl, setDebugAiImageUrl] = useState('')
   const patternRef = useRef<HTMLDivElement>(null)
+  const previewPanelRef = useRef<HTMLElement>(null)
   const paperViewportRef = useRef<HTMLDivElement>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const effectReferenceRef = useRef<HTMLInputElement>(null)
@@ -611,6 +636,10 @@ function App() {
       setReplaceFromSymbol('')
       setReplaceToPaletteIndex(-1)
       setSelectedPaletteIndex(0)
+      setLegendExpanded(false)
+      if (window.matchMedia('(max-width: 620px)').matches) {
+        window.requestAnimationFrame(() => previewPanelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成失败，请换一张图片试试')
     } finally {
@@ -644,10 +673,20 @@ function App() {
     setError('')
     setIsAiGenerating(true)
     try {
-      const { size, ratio } = await pickAgnesSize(refFile, shape)
+      setAiStage('正在准备参考图…')
+      const { size, ratio } = await pickAgnesSize(refFile, shape, aiFraming)
       const preparedFile = await prepareReferenceImage(refFile, ratio)
       const effectFile = effectReferenceRef.current?.files?.[0]
-      const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors, aiNegativePrompt, Boolean(effectFile))
+      const prompt = buildAgnesPrompt({
+        styleId: aiStyleId,
+        extraPrompt: aiPrompt,
+        gridSize,
+        maxColors,
+        negativePrompt: aiNegativePrompt,
+        hasEffectReference: Boolean(effectFile),
+        framing: aiFraming,
+      })
+      setAiStage('AI 生成中…')
       if (debugMode) {
         setDebugPrompt(prompt)
         clearDebugAiImage()
@@ -663,7 +702,9 @@ function App() {
         count: aiCandidateCount,
         prompt,
         effectFile,
+        framing: aiFraming,
       })
+      setAiStage('正在量化成图纸…')
       const candidates = aiFiles.map((file) => ({ url: URL.createObjectURL(file), file }))
       setAiCandidateIndex(0)
       setAiCandidates((current) => {
@@ -763,10 +804,11 @@ function App() {
   function createBoardPattern() {
     const cols = Math.max(1, Math.round(gridSize))
     const rows = Math.max(1, Math.round(boardRowsInput))
-    if (pattern.length) {
-      const confirmed = window.confirm('创建新画板将清空当前图纸，是否继续？')
-      if (!confirmed) return
+    if (pattern.length && !boardConfirm) {
+      setBoardConfirm(true)
+      return
     }
+    setBoardConfirm(false)
 
     const nextPalette = createBoardStarterPalette(activePaletteColors)
     resetPatternHistory({
@@ -830,9 +872,26 @@ function App() {
       const exportPalette = [...palette]
         .filter((color) => color.count > 0)
         .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
-      const canvas = buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, renderMode, activeCells)
+      const canvas = limitExportCanvas(buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, renderMode, activeCells), isMobile ? 4096 : 8192)
       const blob = await canvasToBlob(canvas)
-      saveAs(blob, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)
+      const filename = `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`
+      if (isMobile) {
+        const file = new File([blob], filename, { type: 'image/png' })
+        const shareData = { files: [file], title: filename }
+        if (typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+          try {
+            await navigator.share(shareData)
+            setExportNotice('请在分享面板中选择“存储图像”保存到相册')
+            return
+          } catch (cause) {
+            if (cause instanceof DOMException && cause.name === 'AbortError') return
+          }
+        }
+        if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl)
+        setExportSheetUrl(URL.createObjectURL(blob))
+        return
+      }
+      saveAs(blob, filename)
       setExportNotice('PNG 已开始下载')
       if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
       exportNoticeTimerRef.current = window.setTimeout(() => setExportNotice(''), 2800)
@@ -886,7 +945,7 @@ function App() {
               {sourceMode === 'board' ? <Pencil size={18} /> : <ImageUp size={18} />}
               {sourceMode === 'board' ? '创建画板' : '上传图片'}
             </button>
-            <button className="ghost-btn" type="button" onClick={() => window.print()} disabled={!pattern.length}>
+            <button className="ghost-btn desktop-only" type="button" onClick={() => window.print()} disabled={!pattern.length}>
               <Printer size={18} /> 打印图纸
             </button>
           </div>
@@ -901,7 +960,8 @@ function App() {
 
       <section className={`workspace ${isEditing ? 'editing' : ''}`}>
         <aside className="panel controls-panel">
-          <div className="segmented mode-tabs source-mode-tabs">
+          <div className="source-block">
+          <div className="segmented mode-tabs source-mode-tabs" role="group" aria-label="生成方式">
             <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => switchSourceMode('local')} type="button">本地转换</button>
             <button className={sourceMode === 'ai' ? 'active' : ''} onClick={() => switchSourceMode('ai')} type="button">AI 生成</button>
             <button className={sourceMode === 'board' ? 'active' : ''} onClick={() => switchSourceMode('board')} type="button">画板绘制</button>
@@ -937,9 +997,13 @@ function App() {
                   </button>
                 ))}
               </div>
-              <button type="button" className="primary-btn board-create-btn" onClick={createBoardPattern}>
-                <Pencil size={18} /> 创建并开始绘制
-              </button>
+              {boardConfirm && <p className="board-confirm">创建新画板将清空当前图纸。</p>}
+              <div className="board-create-actions">
+                <button type="button" className="primary-btn board-create-btn" onClick={createBoardPattern}>
+                  <Pencil size={18} /> {boardConfirm ? '确认创建' : '创建并开始绘制'}
+                </button>
+                {boardConfirm && <button type="button" onClick={() => setBoardConfirm(false)}>取消</button>}
+              </div>
               <small>进入画板后可使用画笔、橡皮、移动、撤销/重做和批量换色。</small>
             </div>
           )}
@@ -985,8 +1049,18 @@ function App() {
                   onChange={(event) => setAiPrompt(event.target.value)}
                 />
               </label>
+              <div className="segmented" role="group" aria-label="构图">
+                {AI_FRAMING_OPTIONS.map((option) => (
+                  <button key={option.id} className={aiFraming === option.id ? 'active' : ''} onClick={() => setAiFraming(option.id)} type="button">{option.label}</button>
+                ))}
+              </div>
+              <div className="segmented" role="group" aria-label="AI 候选数量">
+                {[1, 2, 3, 4].map((count) => (
+                  <button key={count} className={aiCandidateCount === count ? 'active' : ''} onClick={() => setAiCandidateCount(count)} type="button">{count} 张</button>
+                ))}
+              </div>
               <label className="ai-prompt-field">
-                <span>负面提示词</span>
+                <span>补充指令</span>
                 <textarea
                   className="ai-prompt-input"
                   rows={2}
@@ -1004,37 +1078,21 @@ function App() {
                 {isAiGenerating ? <LoaderCircle className="spin-icon" size={18} /> : <WandSparkles size={18} />}
                 {isAiGenerating ? 'AI 生成中…' : 'AI 生成拼豆图'}
               </button>
-              <div className="segmented" aria-label="AI 候选数量">
-                {[1, 2, 3, 4].map((count) => (
-                  <button key={count} className={aiCandidateCount === count ? 'active' : ''} onClick={() => setAiCandidateCount(count)} type="button">{count} 张</button>
-                ))}
-              </div>
-              {aiCandidates.length > 1 && (
-                <div className="ai-candidates">
-                  {aiCandidates.map((candidate, index) => (
-                    <button
-                      key={candidate.url}
-                      type="button"
-                      className={index === aiCandidateIndex ? 'active' : ''}
-                      onClick={() => void applyAiCandidate(index)}
-                    >
-                      <img src={candidate.url} alt={`候选 ${index + 1}`} />
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
+          {error && <p className="error">{error}</p>}
+          </div>
 
+          <div className="settings-block">
           <label>
             <span>
               {sourceMode === 'board' ? '画板宽度' : '图纸宽度'} <b>{gridSize} 格</b>
               <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐约 52 格' : ''}{sourceMode === 'board' ? '；创建后可手动绘制' : ''}</small>
             </span>
-            <input type="range" min="24" max="208" step="4" value={gridSize} onChange={(event) => {
-              const value = Number(event.target.value)
-              setGridSize(value)
-              if (sourceMode !== 'board') void regenerate(value, maxColors, shape)
+            <input type="range" min="24" max="208" step="4" value={gridSize} onChange={(event) => setGridSize(Number(event.target.value))} onPointerUp={(event) => {
+              if (sourceMode !== 'board') void regenerate(Number(event.currentTarget.value), maxColors, shape)
+            }} onKeyUp={(event) => {
+              if (sourceMode !== 'board') void regenerate(Number(event.currentTarget.value), maxColors, shape)
             }} />
             <div className="quick-size-grid" aria-label={sourceMode === 'board' ? '常用画板宽度' : '常用图纸宽度'}>
               {QUICK_GRID_SIZES.map((size) => (
@@ -1053,26 +1111,27 @@ function App() {
             </div>
           </label>
 
-          <label>
-            <span>色卡 <b>{activePalette.label}</b></span>
-            <div className="segmented">
-              <button className={paletteBrand === 'mard' ? 'active' : ''} onClick={() => switchPaletteBrand('mard')} type="button">MARD（国产）</button>
-              <button className={paletteBrand === 'hama' ? 'active' : ''} onClick={() => switchPaletteBrand('hama')} type="button">Hama</button>
-            </div>
-          </label>
-
           {sourceMode !== 'board' && (
             <>
               <label>
                 <span>最大颜色数 <b>{maxColors}</b></span>
-                <input type="range" min="4" max={colorSliderMax} step="1" value={maxColors} onChange={(event) => {
-                  const value = Number(event.target.value)
-                  setMaxColors(value)
-                  void regenerate(gridSize, value, shape)
+                <input type="range" min="4" max={colorSliderMax} step="1" value={maxColors} onChange={(event) => setMaxColors(Number(event.target.value))} onPointerUp={(event) => {
+                  void regenerate(gridSize, Number(event.currentTarget.value), shape)
+                }} onKeyUp={(event) => {
+                  void regenerate(gridSize, Number(event.currentTarget.value), shape)
                 }} />
               </label>
 
-              <div className="segmented">
+              <details className="advanced-panel">
+                <summary>更多设置</summary>
+              <label>
+                <span>色卡 <b>{activePalette.label}</b></span>
+                <div className="segmented" role="group" aria-label="色卡">
+                  <button className={paletteBrand === 'mard' ? 'active' : ''} onClick={() => switchPaletteBrand('mard')} type="button">MARD（国产）</button>
+                  <button className={paletteBrand === 'hama' ? 'active' : ''} onClick={() => switchPaletteBrand('hama')} type="button">Hama</button>
+                </div>
+              </label>
+              <div className="segmented" role="group" aria-label="图纸形状">
                 <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
                 <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
               </div>
@@ -1095,13 +1154,19 @@ function App() {
                   </div>
                 </div>
               </details>
+              </details>
             </>
           )}
 
-          <div className="segmented">
-            <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">色号图纸</button>
-            <button className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')} type="button">纯色预览</button>
-          </div>
+          {sourceMode === 'board' && (
+            <label>
+              <span>色卡 <b>{activePalette.label}</b></span>
+              <div className="segmented" role="group" aria-label="色卡">
+                <button className={paletteBrand === 'mard' ? 'active' : ''} onClick={() => switchPaletteBrand('mard')} type="button">MARD（国产）</button>
+                <button className={paletteBrand === 'hama' ? 'active' : ''} onClick={() => switchPaletteBrand('hama')} type="button">Hama</button>
+              </div>
+            </label>
+          )}
 
           <div className="action-grid">
             {sourceMode === 'board' ? (
@@ -1112,10 +1177,10 @@ function App() {
             <button type="button" onClick={enterEditMode} disabled={!pattern.length || isEditing}>
               <Pencil size={17} /> 编辑图纸
             </button>
-            <button type="button" className="action-history-btn" onClick={undoPatternEdit} disabled={!canUndo}>
+            <button type="button" className="action-history-btn desktop-only" onClick={undoPatternEdit} disabled={!canUndo}>
               <Undo2 size={17} /> 撤销
             </button>
-            <button type="button" className="action-history-btn" onClick={redoPatternEdit} disabled={!canRedo}>
+            <button type="button" className="action-history-btn desktop-only" onClick={redoPatternEdit} disabled={!canRedo}>
               <Redo2 size={17} /> 重做
             </button>
             <button type="button" className="action-export-btn" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
@@ -1123,15 +1188,18 @@ function App() {
               {isExporting ? '导出中...' : '导出 PNG'}
             </button>
           </div>
-          {error && <p className="error">{error}</p>}
+          </div>
         </aside>
 
-        <section className={`panel preview-panel ${isEditing ? 'editing-active' : ''}`}>
+        <section className={`panel preview-panel ${isEditing ? 'editing-active' : ''}`} ref={previewPanelRef}>
           <div className="section-title">
             <div><Grid3X3 size={18} /> {isEditing ? '图纸编辑' : '图纸预览'}</div>
             <span>{pattern.length ? `${gridCols}×${gridRows} · ${activeCells} 颗豆 · ${palette.length} 色` : (sourceMode === 'board' ? '等待创建画板' : '等待上传')}</span>
             {pattern.length > 0 && (
               <div className="preview-mode-tabs">
+                <button type="button" className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')}>色号</button>
+                <button type="button" className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')}>纯色</button>
+                {!isEditing && <button type="button" onClick={() => setZoomOpen(true)}>放大</button>}
                 <button type="button" className={previewMode === 'view' ? 'active' : ''} onClick={exitEditMode}>预览</button>
                 <button type="button" className={previewMode === 'edit' ? 'active' : ''} onClick={enterEditMode}>编辑</button>
               </div>
@@ -1182,8 +1250,17 @@ function App() {
                       {renderGrid()}
                     </div>
                   </div>
+                  {aiCandidates.length > 1 && (
+                    <div className="ai-candidates preview-candidates">
+                      {aiCandidates.map((candidate, index) => (
+                        <button key={candidate.url} type="button" className={index === aiCandidateIndex ? 'active' : ''} onClick={() => void applyAiCandidate(index)}>
+                          <img src={candidate.url} alt={`候选 ${index + 1}`} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="legend">
-                    {palette.map((color) => (
+                    {(isMobile && !legendExpanded ? palette.slice(0, 8) : palette).map((color) => (
                       <div className="legend-item" key={color.symbol}>
                         <i style={{ background: color.hex, color: isDarkHex(color.hex) ? '#fff' : '#17131f' }}>{color.symbol}</i>
                         <span>{formatLegendLabel(color)}</span>
@@ -1191,6 +1268,11 @@ function App() {
                       </div>
                     ))}
                   </div>
+                  {isMobile && palette.length > 8 && (
+                    <button className="ghost-btn legend-toggle" type="button" onClick={() => setLegendExpanded((current) => !current)}>
+                      {legendExpanded ? '收起色号' : `查看全部 ${palette.length} 色`}
+                    </button>
+                  )}
                 </>
               ) : (
                 <PatternEditor
@@ -1240,7 +1322,7 @@ function App() {
               <LoaderCircle size={30} />
             </div>
             <strong>AI 正在生成图片</strong>
-            <span>AI 创作中，完成后将自动量化成拼豆图纸…</span>
+            <span>{aiStage}</span>
           </div>
         </div>
       )}
@@ -1253,6 +1335,35 @@ function App() {
             </div>
             <strong>正在导出 PNG</strong>
             <span>高清图纸生成中，请稍等一下…</span>
+          </div>
+        </div>
+      )}
+
+      {pattern.length > 0 && !isEditing && (
+        <div className="mobile-action-bar">
+          <button type="button" onClick={() => void regenerate()} disabled={!sourcePreview || isProcessing || isAiGenerating}>重新生成</button>
+          <button type="button" onClick={enterEditMode}>编辑</button>
+          <button type="button" onClick={() => void exportPng()} disabled={isExporting}>保存到相册</button>
+        </div>
+      )}
+
+      {zoomOpen && pattern.length > 0 && (
+        <div className="zoom-sheet" role="dialog" aria-label="放大查看图纸">
+          <header>
+            <strong>放大查看</strong>
+            <button type="button" onClick={() => setZoomOpen(false)}>关闭</button>
+          </header>
+          <PatternZoomView pattern={pattern} gridCols={gridCols} gridRows={gridRows} cellSize={cellSize} renderMode={renderMode} />
+        </div>
+      )}
+
+      {exportSheetUrl && (
+        <div className="export-sheet" role="dialog" aria-label="保存到相册">
+          <img src={exportSheetUrl} alt="拼豆图纸，长按可保存到相册" />
+          <p>长按图片，选择“保存到相册”</p>
+          <div className="export-sheet-actions">
+            <button type="button" onClick={() => saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)}>下载文件</button>
+            <button type="button" onClick={() => { URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}>关闭</button>
           </div>
         </div>
       )}

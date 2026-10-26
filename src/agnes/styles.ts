@@ -10,7 +10,7 @@ export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
     id: 'cute-chibi',
     label: '可爱 Q 版',
     description: '大头小身，柔和配色',
-    promptSuffix: 'Redraw the subject as a cute chibi character with an oversized head, a small body, round shapes, and a soft pastel palette.',
+    promptSuffix: 'Redraw the subject as a cute chibi character with an oversized head, compact proportions, round shapes, and a soft pastel palette.',
   },
   {
     id: 'retro-8bit',
@@ -39,6 +39,32 @@ const STYLE_ALIASES: Record<string, string> = {
 
 export const DEFAULT_NEGATIVE_PROMPT = ''
 
+export type AiFraming = 'follow' | 'headshot' | 'half' | 'full'
+
+export const AI_FRAMING_OPTIONS: Array<{ id: AiFraming; label: string }> = [
+  { id: 'follow', label: '跟随原图' },
+  { id: 'headshot', label: '头像' },
+  { id: 'half', label: '半身' },
+  { id: 'full', label: '全身' },
+]
+
+const FRAMING_PROMPTS: Record<AiFraming, string> = {
+  follow: 'Keep the same framing as the reference. If it shows only the head and shoulders, output only the head and shoulders. Do not add body parts that are not visible in the reference.',
+  headshot: 'Show only the head and shoulders. Do not add a torso, arms, or legs.',
+  half: 'Show the upper body from the waist up.',
+  full: 'Show the full body from head to feet.',
+}
+
+export interface BuildAgnesPromptOptions {
+  styleId: string
+  extraPrompt?: string
+  gridSize?: number
+  maxColors?: number
+  negativePrompt?: string
+  hasEffectReference?: boolean
+  framing?: AiFraming
+}
+
 const RENDERING_PROMPT = 'Use bold clean outlines, solid color fills, and a very limited palette. Replace gradients, textures, and shadows with flat color. Remove the background and replace it with one plain color.'
 const COMPOSITION_PROMPT = 'Center the subject and make it fill most of the frame with a tight crop.'
 
@@ -54,20 +80,22 @@ function simplificationPrompt(gridSize?: number) {
   return ''
 }
 
-export function buildAgnesPrompt(
-  styleId: string,
+export function buildAgnesPrompt({
+  styleId,
   extraPrompt = '',
-  gridSize?: number,
-  maxColors?: number,
+  gridSize,
+  maxColors,
   negativePrompt = DEFAULT_NEGATIVE_PROMPT,
   hasEffectReference = false,
-) {
+  framing = 'follow',
+}: BuildAgnesPromptOptions) {
   const style = resolveStyle(styleId)
   if (!style) throw new Error('请选择一种 AI 风格')
 
   const parts = [
     style.promptSuffix,
     'Keep the main subject, pose, and key identifying features of the first reference image.',
+    FRAMING_PROMPTS[framing],
   ]
   const trimmedExtra = extraPrompt.trim()
   if (trimmedExtra) parts.push(trimmedExtra)

@@ -11,6 +11,7 @@ interface EditablePatternGridProps {
   renderMode: 'symbols' | 'solid'
   tool: EditorTool
   selectedPaletteIndex: number
+  readOnly?: boolean
   onStrokeComplete: (cells: Array<{ x: number; y: number }>, paletteIndex: number | null) => void
 }
 
@@ -78,10 +79,19 @@ export function EditablePatternGrid({
   gridRows,
   cellSize,
   renderMode,
-  tool,
+  tool: requestedTool,
   selectedPaletteIndex,
+  readOnly = false,
   onStrokeComplete,
 }: EditablePatternGridProps) {
+  const tool: EditorTool = readOnly ? 'pan' : requestedTool
+  const [minimapOpen, setMinimapOpen] = useState(() => typeof window === 'undefined' || window.innerWidth > 620)
+
+  useEffect(() => {
+    if (!minimapOpen || window.innerWidth > 620) return undefined
+    const timer = window.setTimeout(() => setMinimapOpen(false), 5000)
+    return () => window.clearTimeout(timer)
+  }, [minimapOpen])
   const viewportRef = useRef<HTMLDivElement>(null)
   const miniMapRef = useRef<HTMLDivElement>(null)
   const miniMapCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -164,9 +174,12 @@ export function EditablePatternGrid({
     const syncFitZoom = (forceFit = false) => {
       const fitScale = Math.min(1, (viewport.clientWidth - 24) / gridWidth, (viewport.clientHeight - 24) / gridHeight)
       const nextFitZoom = Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1
+      const detailZoom = viewport.clientWidth <= 640
+        ? Math.min(4, Math.max(nextFitZoom, 14 / Math.max(cellSize, 1)))
+        : nextFitZoom
       setFitZoom(nextFitZoom)
       setZoom((current) => {
-        if (forceFit || !hasCustomZoomRef.current) return nextFitZoom
+        if (forceFit || !hasCustomZoomRef.current) return detailZoom
         return clamp(Number(current.toFixed(3)), getMinZoomForFit(nextFitZoom), 4)
       })
       window.requestAnimationFrame(() => syncViewportMetrics())
@@ -181,7 +194,7 @@ export function EditablePatternGrid({
       observer.disconnect()
       window.removeEventListener('resize', handleResize)
     }
-  }, [gridWidth, gridHeight])
+  }, [gridWidth, gridHeight, cellSize])
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => syncViewportMetrics())
@@ -450,7 +463,14 @@ export function EditablePatternGrid({
       <div className="editor-board-badge" aria-live="polite">
         {Math.round(zoom * 100)}%
       </div>
-      {showMiniMap && (
+      <div className="editor-zoom-actions">
+        <button type="button" onClick={() => { hasCustomZoomRef.current = false; setZoom(fitZoom) }}>适应</button>
+        <button type="button" onClick={() => zoomTo(Math.min(4, Math.max(1, 14 / Math.max(cellSize, 1))))}>单格 14px</button>
+      </div>
+      {showMiniMap && !minimapOpen && (
+        <button className="editor-minimap-toggle" type="button" aria-label="打开全图预览" onClick={() => setMinimapOpen(true)} />
+      )}
+      {showMiniMap && minimapOpen && (
         <div
           ref={miniMapRef}
           className="editor-minimap"

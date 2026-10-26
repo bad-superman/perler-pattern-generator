@@ -1,4 +1,4 @@
-import { buildAgnesPrompt } from './styles'
+import { buildAgnesPrompt, type AiFraming } from './styles'
 
 interface GenerateAgnesImageOptions {
   file?: File
@@ -13,6 +13,7 @@ interface GenerateAgnesImageOptions {
   prompt?: string
   negativePrompt?: string
   hasEffectReference?: boolean
+  framing?: AiFraming
 }
 
 interface AgnesGenerateResponse {
@@ -41,7 +42,15 @@ async function responseToFile(payload: AgnesGenerateResponse, styleId: string): 
 }
 
 export async function generateAgnesImages(options: GenerateAgnesImageOptions): Promise<File[]> {
-  const prompt = options.prompt ?? buildAgnesPrompt(options.styleId, options.extraPrompt, options.gridSize, options.maxColors, options.negativePrompt, options.hasEffectReference ?? Boolean(options.effectFile))
+  const prompt = options.prompt ?? buildAgnesPrompt({
+    styleId: options.styleId,
+    extraPrompt: options.extraPrompt,
+    gridSize: options.gridSize,
+    maxColors: options.maxColors,
+    negativePrompt: options.negativePrompt,
+    hasEffectReference: options.hasEffectReference ?? Boolean(options.effectFile),
+    framing: options.framing,
+  })
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('styleId', options.styleId)
@@ -75,8 +84,9 @@ export async function generateAgnesImage(options: GenerateAgnesImageOptions): Pr
   return image
 }
 
-export async function pickAgnesSize(file?: File, shape: 'ratio' | 'square' = 'ratio'): Promise<{ size: string; ratio: string }> {
-  if (!file) return { size: '1K', ratio: '1:1' }
+export async function pickAgnesSize(file?: File, shape: 'ratio' | 'square' = 'ratio', framing: AiFraming = 'follow'): Promise<{ size: string; ratio: string }> {
+  if (framing === 'headshot') return { size: '1K', ratio: '1:1' }
+  if (!file) return { size: '1K', ratio: framing === 'half' || framing === 'full' ? '3:4' : '1:1' }
 
   const url = URL.createObjectURL(file)
   try {
@@ -90,6 +100,9 @@ export async function pickAgnesSize(file?: File, shape: 'ratio' | 'square' = 'ra
     if (shape === 'square') return { size: '1K', ratio: '1:1' }
 
     const ratio = image.width / Math.max(image.height, 1)
+    if (framing === 'half' || framing === 'full') {
+      return { size: '1K', ratio: ratio >= 1.2 ? '4:3' : '3:4' }
+    }
     if (ratio >= 1.2) return { size: '1K', ratio: '4:3' }
     if (ratio <= 0.8) return { size: '1K', ratio: '3:4' }
     return { size: '1K', ratio: '1:1' }
