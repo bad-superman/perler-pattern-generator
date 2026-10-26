@@ -6,6 +6,7 @@ import { cropSubjectFromImage } from './agnes/cropSubject'
 import { prepareReferenceImage } from './agnes/prepareReference'
 import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt, type AiFraming } from './agnes/styles'
 import { useMediaQuery } from './hooks/useMediaQuery'
+import { MobileLayout } from './layouts/MobileLayout'
 import { PatternEditor, type EditorTool } from './components/PatternEditor'
 import { PatternZoomView } from './components/PatternZoomView'
 import { usePatternHistory } from './hooks/usePatternHistory'
@@ -933,6 +934,105 @@ function App() {
     )
   }
 
+  const fileInputs = (
+    <>
+      <input ref={uploadRef} type="file" accept="image/*" hidden onChange={(event) => void handleFile(event.target.files?.[0])} />
+      <input ref={effectReferenceRef} type="file" accept="image/*" hidden onChange={(event) => handleEffectReferenceFile(event.target.files?.[0])} />
+    </>
+  )
+
+  if (isMobile) {
+    return (
+      <>
+        {fileInputs}
+        <MobileLayout
+        sourceMode={sourceMode}
+        switchSourceMode={switchSourceMode}
+        sourceName={sourceName}
+        sourcePreview={sourcePreview}
+        onPickFile={() => uploadRef.current?.click()}
+        onPickEffect={() => effectReferenceRef.current?.click()}
+        onGenerate={() => void regenerate()}
+        pattern={pattern}
+        palette={palette}
+        gridCols={gridCols}
+        gridRows={gridRows}
+        activeCells={activeCells}
+        renderMode={renderMode}
+        setRenderMode={setRenderMode}
+        cellSize={cellSize}
+        gridSize={gridSize}
+        setGridSize={setGridSize}
+        maxColors={maxColors}
+        setMaxColors={setMaxColors}
+        colorSliderMax={colorSliderMax}
+        shape={shape}
+        setShape={setShape}
+        paletteBrand={paletteBrand}
+        paletteLabel={activePalette.label}
+        switchPaletteBrand={switchPaletteBrand}
+        removeBackground={removeBackground}
+        cleanupIsolated={cleanupIsolated}
+        dither={dither}
+        updateQuantize={updateQuantize}
+        regenerate={(nextGrid = gridSize, nextColors = maxColors, nextShape = shape) => void regenerate(nextGrid, nextColors, nextShape)}
+        boardRowsInput={boardRowsInput}
+        setBoardRowsInput={setBoardRowsInput}
+        createBoard={createBoardPattern}
+        boardConfirm={boardConfirm}
+        cancelBoardConfirm={() => setBoardConfirm(false)}
+        aiStyleId={aiStyleId}
+        setAiStyleId={setAiStyleId}
+        aiPrompt={aiPrompt}
+        setAiPrompt={setAiPrompt}
+        aiFraming={aiFraming}
+        setAiFraming={setAiFraming}
+        aiCandidateCount={aiCandidateCount}
+        setAiCandidateCount={setAiCandidateCount}
+        aiCandidates={aiCandidates}
+        aiCandidateIndex={aiCandidateIndex}
+        applyCandidate={(index) => void applyAiCandidate(index)}
+        generateAi={() => void generateWithAi()}
+        isAiGenerating={isAiGenerating}
+        aiStage={aiStage}
+        effectReferenceName={effectReferenceName}
+        onEffectFile={handleEffectReferenceFile}
+        clearEffect={clearEffectReference}
+        isProcessing={isProcessing}
+        isEditing={isEditing}
+        enterEdit={enterEditMode}
+        exitEdit={exitEditMode}
+        editorTool={editorTool}
+        setEditorTool={handleEditorToolChange}
+        selectedPaletteIndex={activeSelectedPaletteIndex}
+        colorPickerOpen={isColorPickerOpen}
+        toggleColorPicker={toggleColorPicker}
+        brandColors={activePaletteColors}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        undo={undoPatternEdit}
+        redo={redoPatternEdit}
+        onStroke={handleStrokeComplete}
+        onSelectColor={handleSelectPaletteColor}
+        closeColorPicker={() => setIsColorPickerOpen(false)}
+        replaceFromSymbol={replaceFromSymbol}
+        replaceToPaletteIndex={replaceToPaletteIndex}
+        replaceAffectedCount={replaceAffectedCount}
+        setReplaceFrom={setReplaceFromSymbol}
+        setReplaceTo={setReplaceToPaletteIndex}
+        applyReplace={handleApplyColorReplace}
+        exportPng={() => void exportPng()}
+        isExporting={isExporting}
+        exportSheetUrl={exportSheetUrl}
+        closeExportSheet={() => { if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}
+        downloadSheet={() => saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)}
+        error={error}
+        promoUrl={PROMO_AD_URL}
+      />
+      </>
+    )
+  }
+
   return (
     <main className="app-shell">
       <section className="hero-section">
@@ -1122,8 +1222,6 @@ function App() {
                 }} />
               </label>
 
-              <details className="advanced-panel">
-                <summary>更多设置</summary>
               <label>
                 <span>色卡 <b>{activePalette.label}</b></span>
                 <div className="segmented" role="group" aria-label="色卡">
@@ -1131,6 +1229,8 @@ function App() {
                   <button className={paletteBrand === 'hama' ? 'active' : ''} onClick={() => switchPaletteBrand('hama')} type="button">Hama</button>
                 </div>
               </label>
+              <details className="advanced-panel">
+                <summary>更多设置</summary>
               <div className="segmented" role="group" aria-label="图纸形状">
                 <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
                 <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
@@ -1168,6 +1268,11 @@ function App() {
             </label>
           )}
 
+          <div className="segmented" role="group" aria-label="显示模式">
+            <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">色号图纸</button>
+            <button className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')} type="button">纯色预览</button>
+          </div>
+
           <div className="action-grid">
             {sourceMode === 'board' ? (
               <button type="button" onClick={createBoardPattern}><RotateCcw size={17} /> 新建画板</button>
@@ -1177,12 +1282,16 @@ function App() {
             <button type="button" onClick={enterEditMode} disabled={!pattern.length || isEditing}>
               <Pencil size={17} /> 编辑图纸
             </button>
-            <button type="button" className="action-history-btn desktop-only" onClick={undoPatternEdit} disabled={!canUndo}>
-              <Undo2 size={17} /> 撤销
-            </button>
-            <button type="button" className="action-history-btn desktop-only" onClick={redoPatternEdit} disabled={!canRedo}>
-              <Redo2 size={17} /> 重做
-            </button>
+            {(canUndo || canRedo) && (
+              <>
+                <button type="button" className="action-history-btn" onClick={undoPatternEdit} disabled={!canUndo}>
+                  <Undo2 size={17} /> 撤销
+                </button>
+                <button type="button" className="action-history-btn" onClick={redoPatternEdit} disabled={!canRedo}>
+                  <Redo2 size={17} /> 重做
+                </button>
+              </>
+            )}
             <button type="button" className="action-export-btn" onClick={() => void exportPng()} disabled={!pattern.length || isExporting}>
               {isExporting ? <LoaderCircle className="spin-icon" size={17} /> : <Download size={17} />}
               {isExporting ? '导出中...' : '导出 PNG'}
@@ -1197,9 +1306,6 @@ function App() {
             <span>{pattern.length ? `${gridCols}×${gridRows} · ${activeCells} 颗豆 · ${palette.length} 色` : (sourceMode === 'board' ? '等待创建画板' : '等待上传')}</span>
             {pattern.length > 0 && (
               <div className="preview-mode-tabs">
-                <button type="button" className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')}>色号</button>
-                <button type="button" className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')}>纯色</button>
-                {!isEditing && <button type="button" onClick={() => setZoomOpen(true)}>放大</button>}
                 <button type="button" className={previewMode === 'view' ? 'active' : ''} onClick={exitEditMode}>预览</button>
                 <button type="button" className={previewMode === 'edit' ? 'active' : ''} onClick={enterEditMode}>编辑</button>
               </div>

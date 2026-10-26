@@ -1,0 +1,227 @@
+.m-shell {
+  min-height: 100dvh;
+  background: var(--bg, #f6f3fb);
+  padding-bottom: 24px;
+}
+
+.m-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #fff;
+  border-bottom: 1px solid rgba(23, 19, 31, 0.12);
+}
+
+.m-appbar strong { font-size: 16px; }
+
+.m-modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 18px;
+  background: rgba(23, 19, 31, 0.06);
+}
+
+.m-modes button {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: #6f647d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.m-modes button.active {
+  background: #17131f;
+  color: #fff;
+}
+
+.m-card {
+  margin: 8px 12px 0;
+  padding: 12px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(23, 19, 31, 0.12);
+  background: #fff;
+}
+
+.m-upload {
+  width: 100%;
+  height: 148px;
+  border-radius: 16px;
+  border: 1px dashed rgba(23, 19, 31, 0.28);
+  background: rgba(23, 19, 31, 0.03);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #6f647d;
+  font-size: 13px;
+}
+
+.m-upload img {
+  width: 72px;
+  height: 86px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.m-upload b { color: #17131f; font-size: 14px; }
+
+.m-primary,
+.m-secondary {
+  height: 44px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.m-primary {
+  width: 100%;
+  border: 0;
+  background: #6844ec;
+  color: #fff;
+}
+
+.m-primary:disabled { background: rgba(23, 19, 31, 0.08); color: #9a90a6; }
+
+.m-secondary {
+  border: 1px solid rgba(23, 19, 31, 0.16);
+  background: #fff;
+  color: #17131f;
+}
+
+.m-hint { margin: 6px 0 0; text-align: center; color: #9a90a6; font-size: 12px; }
+
+.m-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 14px; }
+.m-row span { color: #6f647d; font-size: 12px; }
+
+.m-ai-card { display: grid; gap: 16px; margin-top: 16px; }
+.m-ai-card .m-row { margin-bottom: 8px; }
+.m-ai-more { display: grid; gap: 14px; }
+.m-style-chips { flex-wrap: wrap; overflow: visible; }
+.m-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.m-chips::-webkit-scrollbar { display: none; }
+.m-chips button, .m-stepper button {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: rgba(23, 19, 31, 0.05);
+  color: #6f647d;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.m-chips button.active { background: rgba(104, 68, 236, 0.12); color: #17131f; border-color: rgba(104, 68, 236, 0.28); }
+
+.m-stepper { display: inline-flex; align-items: center; border: 1px solid rgba(23, 19, 31, 0.16); border-radius: 12px; }
+.m-stepper button { width: 40px; border: 0; background: transparent; }
+.m-stepper b { width: 36px; text-align: center; }
+
+.m-custom {
+  width: 72px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(23, 19, 31, 0.16);
+  text-align: center;
+}
+
+.m-disclosure { width: 100%; height: 44px; display: flex; justify-content: space-between; align-items: center; border: 0; border-top: 1px solid rgba(23, 19, 31, 0.08); background: transparent; font-size: 14px; margin-top: 8px; }
+.m-field { width: 100%; min-height: 64px; border-radius: 12px; border: 1px solid rgba(23, 19, 31, 0.16); padding: 10px 12px; font: inherit; }
+
+.m-result-head { display: flex; justify-content: space-between; align-items: center; }
+.m-result-head strong { font-size: 16px; }
+.m-switch { display: flex; padding: 2px; border-radius: 12px; background: rgba(23, 19, 31, 0.05); }
+.m-switch button { height: 32px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: #6f647d; font-weight: 700; }
+.m-switch button.active { background: rgba(104, 68, 236, 0.14); color: #17131f; }
+.m-stats { margin: 4px 0 0; color: #6f647d; font-size: 12px; }
+
+.m-paper { position: relative; margin-top: 12px; overflow: hidden; }
+.m-paper .print-pattern-wrap { transform-origin: top left; }
+.m-zoom-fab {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  border: 1px solid rgba(23, 19, 31, 0.16);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.m-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+.m-chip { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 10px; background: rgba(23, 19, 31, 0.04); font-size: 12px; }
+.m-chip i { width: 20px; height: 20px; border-radius: 5px; display: block; }
+.m-chip b { margin-left: auto; color: #6f647d; font-weight: 600; }
+.m-more { width: 100%; margin-top: 8px; border: 0; background: transparent; color: #6844ec; font-size: 12px; }
+
+.m-candidates { display: flex; gap: 8px; overflow-x: auto; margin-top: 12px; }
+.m-candidates button { width: 64px; height: 64px; padding: 0; border-radius: 10px; border: 2px solid transparent; overflow: hidden; }
+.m-candidates button.active { border-color: #6844ec; }
+.m-candidates img { width: 100%; height: 100%; object-fit: cover; }
+
+.m-actionbar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 25;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(23, 19, 31, 0.12);
+  background: #fff;
+}
+.m-actionbar .m-primary, .m-actionbar .m-secondary { width: 100%; }
+
+.m-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+.m-editor .pattern-editor-layout { flex: 1; min-height: 0; height: 100%; }
+.m-editor .editor-grid-viewport { height: 100%; min-height: 0; }
+
+.m-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(23, 19, 31, 0.92);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  color: #fff;
+}
+.m-sheet img, .m-sheet .editor-grid-shell { flex: 1; min-height: 0; object-fit: contain; background: #fff; border-radius: 16px; }
+.m-sheet-actions { display: flex; justify-content: space-between; }
+.m-sheet-actions button { height: 44px; padding: 0 16px; border: 0; border-radius: 14px; background: #fff; font-weight: 700; }
+
+.m-ad {
+  margin-top: 10px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px dashed rgba(23, 19, 31, 0.2);
+  color: #6f647d;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.m-shell.has-bar { padding-bottom: 108px; }

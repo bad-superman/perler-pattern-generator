@@ -1050,76 +1050,6 @@ h1 {
 .mobile-action-bar,
 .editor-zoom-actions { display: none; }
 
-@media (max-width: 620px) {
-  .app-shell {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 12px 88px;
-  }
-  .hero-section { display: contents; }
-  .hero-copy { order: 1; padding: 16px 16px 14px; }
-  .hero-copy .eyebrow,
-  .hero-copy p,
-  .desktop-only { display: none !important; }
-  .hero-copy h1 { font-size: 22px; line-height: 1.25; }
-  .workspace { order: 2; display: flex; flex-direction: column; gap: 12px; }
-  .hero-side-panel { order: 3; min-height: 0; }
-  .site-footer { order: 4; }
-  .controls-panel { display: contents; padding: 0; position: static; }
-  .source-block,
-  .settings-block {
-    border: 1px solid var(--line);
-    border-radius: 24px;
-    background: var(--surface);
-    padding: 14px;
-  }
-  .source-block { order: 1; }
-  .preview-panel { order: 2; }
-  .settings-block { order: 3; }
-  .source-mode-tabs {
-    position: sticky;
-    top: 0;
-    z-index: 6;
-    background: var(--surface);
-  }
-  .upload-zone { min-height: 148px; }
-  .action-grid { display: none; }
-  .paper-header { display: none; }
-  .preview-panel.editing-active { display: flex; flex-direction: column; }
-  .preview-panel.editing-active .pattern-paper,
-  .preview-panel.editing-active .pattern-editor-layout { flex: 1; height: 100%; min-height: 0; }
-  .preview-panel.editing-active .editor-grid-viewport { height: 100%; min-height: 0; max-height: none; }
-  .result-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-  }
-  .result-summary div { padding: 8px 6px; }
-  .result-summary span,
-  .result-summary small { display: none; }
-  .result-summary strong { font-size: 14px; }
-  .legend { grid-template-columns: 1fr 1fr; }
-  .quick-size-grid button,
-  .segmented button { min-height: 44px; }
-  .mobile-action-bar { display: grid; }
-  .preview-panel.editing-active {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-    height: 100dvh;
-    border-radius: 0;
-    padding: 8px;
-    overflow: hidden;
-  }
-  body:has(.preview-panel.editing-active) { overflow: hidden; }
-  .editor-zoom-actions { display: flex; }
-  .hero-copy,
-  .hero-side-panel,
-  .panel { border-radius: 24px; }
-  .preview-panel,
-  .pattern-paper { padding: 14px; }
-  .export-toast { right: 14px; bottom: 92px; left: 14px; justify-content: center; text-align: center; }
-}
 
 .mobile-action-bar {
   position: fixed;
@@ -1212,6 +1142,14 @@ h1 {
   right: 8px;
   top: 8px;
   z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: #17131f;
+  color: #fff;
+  border: 2px solid #fff;
 }
 
 .board-confirm {

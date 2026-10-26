@@ -468,7 +468,14 @@ export function EditablePatternGrid({
         <button type="button" onClick={() => zoomTo(Math.min(4, Math.max(1, 14 / Math.max(cellSize, 1))))}>单格 14px</button>
       </div>
       {showMiniMap && !minimapOpen && (
-        <button className="editor-minimap-toggle" type="button" aria-label="打开全图预览" onClick={() => setMinimapOpen(true)} />
+        <button className="editor-minimap-toggle" type="button" aria-label="打开全图预览" onClick={() => setMinimapOpen(true)}>
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" />
+            <rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" />
+            <rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" />
+            <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
+          </svg>
+        </button>
       )}
       {showMiniMap && minimapOpen && (
         <div
