@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, Redo2, RotateCcw, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
-import { generateAgnesImage, pickAgnesSize } from './agnes/client'
+import { generateAgnesImages, pickAgnesSize } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
+import { prepareReferenceImage } from './agnes/prepareReference'
 import { AGNES_STYLE_PRESETS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt } from './agnes/styles'
 import { PatternEditor, type EditorTool } from './components/PatternEditor'
 import { usePatternHistory } from './hooks/usePatternHistory'
@@ -23,6 +24,7 @@ import {
   type BeadPaletteEntry,
   type PaletteBrand,
 } from './palettes'
+import { quantizeToPalette, type DitherMode } from './quantize'
 import './App.css'
 
 type BoardShape = 'ratio' | 'square'
@@ -49,29 +51,6 @@ function readDebugModeFromUrl() {
   return !['0', 'false', 'off', 'no'].includes(value.trim().toLowerCase())
 }
 
-function hexToRgb(hex: string) {
-  const normalized = hex.replace('#', '')
-  return {
-    r: parseInt(normalized.slice(0, 2), 16),
-    g: parseInt(normalized.slice(2, 4), 16),
-    b: parseInt(normalized.slice(4, 6), 16),
-  }
-}
-
-function nearestPaletteColor(r: number, g: number, b: number, palette: readonly BeadPaletteEntry[]) {
-  let bestIndex = 0
-  let bestDistance = Number.POSITIVE_INFINITY
-  palette.forEach(([, , hex], index) => {
-    const color = hexToRgb(hex)
-    const distance = (r - color.r) ** 2 + (g - color.g) ** 2 + (b - color.b) ** 2
-    if (distance < bestDistance) {
-      bestDistance = distance
-      bestIndex = index
-    }
-  })
-  return bestIndex
-}
-
 async function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -85,30 +64,6 @@ async function loadImage(file: File): Promise<HTMLImageElement> {
   })
 }
 
-function fitGridToImage(image: HTMLImageElement, width: number, shape: BoardShape) {
-  if (shape === 'square') return { cols: width, rows: width }
-  return { cols: width, rows: Math.max(1, Math.round((width * image.height) / Math.max(image.width, 1))) }
-}
-
-interface ImageDrawRect {
-  sx: number
-  sy: number
-  sw: number
-  sh: number
-  dx: number
-  dy: number
-  dw: number
-  dh: number
-}
-
-function computeImageDrawRect(image: HTMLImageElement, cols: number, rows: number, shape: BoardShape): ImageDrawRect {
-  if (shape === 'square') {
-    const size = Math.min(image.width, image.height)
-    return { sx: 0, sy: 0, sw: size, sh: size, dx: 0, dy: 0, dw: cols, dh: rows }
-  }
-  return { sx: 0, sy: 0, sw: image.width, sh: image.height, dx: 0, dy: 0, dw: cols, dh: rows }
-}
-
 function getGridSizeHint(size: number) {
   if (size <= 32) return '适合简单图标/头像，建议 8–12 色'
   if (size <= 56) return '推荐范围，清晰度和豆数较平衡'
@@ -120,82 +75,6 @@ function getExportCellSize(gridCols: number, gridRows: number) {
   if (longSide >= 96) return 14
   if (longSide > 64) return 16
   return 18
-}
-
-function getSamplingScale(cols: number, rows: number) {
-  return Math.max(cols, rows) <= 48 ? 4 : 1
-}
-
-function drawImageToSampledGrid(
-  image: HTMLImageElement,
-  cols: number,
-  rows: number,
-  shape: BoardShape,
-  sharpQuantize: boolean,
-) {
-  const sampleScale = getSamplingScale(cols, rows)
-  const canvas = document.createElement('canvas')
-  canvas.width = cols * sampleScale
-  canvas.height = rows * sampleScale
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new Error('浏览器不支持 Canvas')
-
-  ctx.imageSmoothingEnabled = sampleScale > 1 || !sharpQuantize
-  const drawRect = computeImageDrawRect(image, cols, rows, shape)
-  ctx.drawImage(
-    image,
-    drawRect.sx,
-    drawRect.sy,
-    drawRect.sw,
-    drawRect.sh,
-    drawRect.dx * sampleScale,
-    drawRect.dy * sampleScale,
-    drawRect.dw * sampleScale,
-    drawRect.dh * sampleScale,
-  )
-
-  if (sampleScale === 1) return ctx.getImageData(0, 0, cols, rows)
-
-  const source = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-  const averaged = new ImageData(cols, rows)
-  const totalSamples = sampleScale * sampleScale
-
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < cols; x += 1) {
-      let r = 0
-      let g = 0
-      let b = 0
-      let a = 0
-      let visibleCount = 0
-
-      for (let sampleY = 0; sampleY < sampleScale; sampleY += 1) {
-        for (let sampleX = 0; sampleX < sampleScale; sampleX += 1) {
-          const sourceX = x * sampleScale + sampleX
-          const sourceY = y * sampleScale + sampleY
-          const sourceOffset = (sourceY * canvas.width + sourceX) * 4
-          const alpha = source[sourceOffset + 3]
-          if (alpha < 80) continue
-          r += source[sourceOffset]
-          g += source[sourceOffset + 1]
-          b += source[sourceOffset + 2]
-          a += alpha
-          visibleCount += 1
-        }
-      }
-
-      const targetOffset = (y * cols + x) * 4
-      if (visibleCount === 0) {
-        averaged.data[targetOffset + 3] = 0
-      } else {
-        averaged.data[targetOffset] = Math.round(r / visibleCount)
-        averaged.data[targetOffset + 1] = Math.round(g / visibleCount)
-        averaged.data[targetOffset + 2] = Math.round(b / visibleCount)
-        averaged.data[targetOffset + 3] = Math.round(a / totalSamples)
-      }
-    }
-  }
-
-  return averaged
 }
 
 function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEntry[] }) {
@@ -524,6 +403,13 @@ function App() {
   const [replaceFromSymbol, setReplaceFromSymbol] = useState('')
   const [replaceToPaletteIndex, setReplaceToPaletteIndex] = useState(-1)
   const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
+  const [removeBackground, setRemoveBackground] = useState(true)
+  const [cleanupIsolated, setCleanupIsolated] = useState(true)
+  const [dither, setDither] = useState<DitherMode>('off')
+  const [aiCandidateCount, setAiCandidateCount] = useState(1)
+  const [aiCandidates, setAiCandidates] = useState<Array<{ url: string; file: File }>>([])
+  const [aiCandidateIndex, setAiCandidateIndex] = useState(0)
+  const quantizeRef = useRef({ removeBackground: true, cleanupIsolated: true, dither: 'off' as DitherMode })
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
   const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
   const [aiPrompt, setAiPrompt] = useState('')
@@ -666,48 +552,40 @@ function App() {
     lastSourceFileRef.current = file
     try {
       const image = await loadImage(file)
-      const { cols, rows } = fitGridToImage(image, nextGridSize, nextShape)
+      const quantizeOptions = quantizeRef.current
+      const quantized = quantizeToPalette(image, {
+        shape: nextShape,
+        gridSize: nextGridSize,
+        maxColors: nextMaxColors,
+        palette: beadPalette,
+        edgePriority: sharpQuantize,
+        removeBackground: quantizeOptions.removeBackground,
+        dither: quantizeOptions.dither,
+        cleanupIsolated: quantizeOptions.cleanupIsolated,
+      })
+      const { cols, rows, selected, assignments } = quantized
       setGridCols(cols)
       setGridRows(rows)
       if (updatePreview) {
         setSourceName(file.name)
         setSourcePreview(URL.createObjectURL(file))
       }
-
-      const imageData = drawImageToSampledGrid(image, cols, rows, nextShape, sharpQuantize)
-
-      const sampled: number[] = []
-      for (let y = 0; y < rows; y += 1) {
-        for (let x = 0; x < cols; x += 1) {
-          const offset = (y * cols + x) * 4
-          if (imageData.data[offset + 3] < 80) continue
-          sampled.push(nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], beadPalette))
-        }
-      }
-
-      const frequency = new Map<number, number>()
-      sampled.forEach((index) => frequency.set(index, (frequency.get(index) ?? 0) + 1))
-      const selected = [...frequency.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, nextMaxColors)
-        .map(([index]) => index)
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
-      const selectedPalette = selected.map((paletteIndex) => ({
-        code: beadPalette[paletteIndex][0],
-        name: beadPalette[paletteIndex][1],
-        hex: beadPalette[paletteIndex][2],
+      const selectedPalette = selected.map((color) => ({
+        code: color.code,
+        name: color.name,
+        hex: color.hex,
         count: 0,
-        symbol: beadPalette[paletteIndex][0],
+        symbol: color.code,
       }))
 
-      const selectedColors = selected.map((index) => beadPalette[index])
       const grid: BeadCell[][] = []
       for (let y = 0; y < rows; y += 1) {
         const row: BeadCell[] = []
         for (let x = 0; x < cols; x += 1) {
-          const offset = (y * cols + x) * 4
-          if (imageData.data[offset + 3] < 80) {
+          const colorIndex = assignments[y * cols + x]
+          if (colorIndex < 0) {
             row.push({
               colorIndex: -1,
               hex: EMPTY_CELL_HEX,
@@ -715,12 +593,11 @@ function App() {
             })
             continue
           }
-          const originalNearest = nearestPaletteColor(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2], selectedColors)
-          selectedPalette[originalNearest].count += 1
+          selectedPalette[colorIndex].count += 1
           row.push({
-            colorIndex: originalNearest,
-            hex: selectedPalette[originalNearest].hex,
-            symbol: selectedPalette[originalNearest].symbol,
+            colorIndex,
+            hex: selectedPalette[colorIndex].hex,
+            symbol: selectedPalette[colorIndex].symbol,
           })
         }
         grid.push(row)
@@ -767,25 +644,34 @@ function App() {
     setError('')
     setIsAiGenerating(true)
     try {
-      const size = await pickAgnesSize(refFile, shape)
+      const { size, ratio } = await pickAgnesSize(refFile, shape)
+      const preparedFile = await prepareReferenceImage(refFile, ratio)
       const effectFile = effectReferenceRef.current?.files?.[0]
       const prompt = buildAgnesPrompt(aiStyleId, aiPrompt, gridSize, maxColors, aiNegativePrompt, Boolean(effectFile))
       if (debugMode) {
         setDebugPrompt(prompt)
         clearDebugAiImage()
       }
-      const aiFile = await generateAgnesImage({
-        file: refFile,
+      const aiFiles = await generateAgnesImages({
+        file: preparedFile,
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
         gridSize,
         maxColors,
         size,
+        ratio,
+        count: aiCandidateCount,
         prompt,
         effectFile,
       })
-      if (debugMode) updateDebugAiImage(aiFile)
-      const croppedFile = await cropSubjectFromImage(aiFile)
+      const candidates = aiFiles.map((file) => ({ url: URL.createObjectURL(file), file }))
+      setAiCandidateIndex(0)
+      setAiCandidates((current) => {
+        current.forEach((item) => URL.revokeObjectURL(item.url))
+        return candidates
+      })
+      if (debugMode) updateDebugAiImage(aiFiles[0])
+      const croppedFile = await cropSubjectFromImage(aiFiles[0])
       await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
@@ -795,6 +681,26 @@ function App() {
     } finally {
       setIsAiGenerating(false)
     }
+  }
+
+  function updateQuantize(partial: Partial<{ removeBackground: boolean; cleanupIsolated: boolean; dither: DitherMode }>) {
+    quantizeRef.current = { ...quantizeRef.current, ...partial }
+    if (partial.removeBackground !== undefined) setRemoveBackground(partial.removeBackground)
+    if (partial.cleanupIsolated !== undefined) setCleanupIsolated(partial.cleanupIsolated)
+    if (partial.dither !== undefined) setDither(partial.dither)
+    if (sourceMode !== 'board') void regenerate()
+  }
+
+  async function applyAiCandidate(index: number) {
+    const candidate = aiCandidates[index]
+    if (!candidate) return
+    setAiCandidateIndex(index)
+    if (debugMode) updateDebugAiImage(candidate.file)
+    const croppedFile = await cropSubjectFromImage(candidate.file)
+    await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
+      updatePreview: false,
+      sharpQuantize: true,
+    })
   }
 
   function handleSelectPaletteColor(index: number) {
@@ -1084,7 +990,7 @@ function App() {
                 <textarea
                   className="ai-prompt-input"
                   rows={2}
-                  placeholder="例如：不要背景色、不要文字、不要水印"
+                  placeholder="例如：换成纯白背景、去掉文字和水印"
                   value={aiNegativePrompt}
                   onChange={(event) => setAiNegativePrompt(event.target.value)}
                 />
@@ -1098,6 +1004,25 @@ function App() {
                 {isAiGenerating ? <LoaderCircle className="spin-icon" size={18} /> : <WandSparkles size={18} />}
                 {isAiGenerating ? 'AI 生成中…' : 'AI 生成拼豆图'}
               </button>
+              <div className="segmented" aria-label="AI 候选数量">
+                {[1, 2, 3, 4].map((count) => (
+                  <button key={count} className={aiCandidateCount === count ? 'active' : ''} onClick={() => setAiCandidateCount(count)} type="button">{count} 张</button>
+                ))}
+              </div>
+              {aiCandidates.length > 1 && (
+                <div className="ai-candidates">
+                  {aiCandidates.map((candidate, index) => (
+                    <button
+                      key={candidate.url}
+                      type="button"
+                      className={index === aiCandidateIndex ? 'active' : ''}
+                      onClick={() => void applyAiCandidate(index)}
+                    >
+                      <img src={candidate.url} alt={`候选 ${index + 1}`} />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1151,6 +1076,25 @@ function App() {
                 <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
                 <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
               </div>
+              <details className="advanced-panel">
+                <summary>高级量化</summary>
+                <label className="check-row">
+                  <input type="checkbox" checked={removeBackground} onChange={(event) => updateQuantize({ removeBackground: event.target.checked })} />
+                  去掉连通的纯色背景
+                </label>
+                <label className="check-row">
+                  <input type="checkbox" checked={cleanupIsolated} onChange={(event) => updateQuantize({ cleanupIsolated: event.target.checked })} />
+                  清理孤立豆
+                </label>
+                <div className="advanced-dither">
+                  <span>渐变抖动</span>
+                  <div className="segmented">
+                    <button className={dither === 'off' ? 'active' : ''} onClick={() => updateQuantize({ dither: 'off' })} type="button">关</button>
+                    <button className={dither === 'light' ? 'active' : ''} onClick={() => updateQuantize({ dither: 'light' })} type="button">弱</button>
+                    <button className={dither === 'medium' ? 'active' : ''} onClick={() => updateQuantize({ dither: 'medium' })} type="button">中</button>
+                  </div>
+                </div>
+              </details>
             </>
           )}
 
@@ -1324,7 +1268,7 @@ function App() {
           <summary>AI 调试模式</summary>
           <div className="debug-content">
             <section>
-              <h2>AI 完整提示词</h2>
+              <h2>AI 完整提示词{debugPrompt ? ` · ${debugPrompt.length} 字` : ''}</h2>
               {debugPrompt ? (
                 <pre>{debugPrompt}</pre>
               ) : (

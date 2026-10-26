@@ -7,7 +7,7 @@ const errors = []
 page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()) })
 page.on('pageerror', (error) => errors.push(error.message))
 await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' })
-await page.locator('input[type=file]').setInputFiles(imagePath)
+await page.locator('input[type=file]').first().setInputFiles(imagePath)
 await page.waitForSelector('.legend-item', { timeout: 20000 })
 const stats = await page.locator('.section-title span').innerText()
 const cells = await page.locator('.pattern-grid span:not(.blank)').count()

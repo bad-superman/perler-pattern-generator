@@ -6,7 +6,7 @@ const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
 
 await page.goto(appUrl, { waitUntil: 'networkidle' })
-await page.locator('input[type=file]').setInputFiles(imagePath)
+await page.locator('input[type=file]').first().setInputFiles(imagePath)
 await page.waitForSelector('.legend-item', { timeout: 15000 })
 
 const result = await page.evaluate(() => {

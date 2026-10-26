@@ -5,82 +5,81 @@ export interface AgnesStylePreset {
   promptSuffix: string
 }
 
-export const AGNES_BASE_PROMPT =
-  '把参考图直接转换成适合拼豆量化的像素画，而不是普通插画或照片。重点突出主体，主体占画面面积的 75-90%，近景、紧凑裁切、主体居中。每一个像素点都应对应最终图纸中的一格/一颗拼豆，使用清晰方形像素块、硬边缘、无抗锯齿、无渐变、无照片纹理、无柔光阴影。不要生成真实拼豆、圆形豆子、底板、孔洞、网格线或纸张效果，只输出干净的像素画图像。背景使用纯色或极简背景，避免大面积空白边距，避免小主体漂浮在大片空背景中。'
-
 export const AGNES_STYLE_PRESETS: AgnesStylePreset[] = [
-  {
-    id: 'pixel-classic',
-    label: '经典像素',
-    description: '清晰色块，最适合拼豆量化',
-    promptSuffix: '经典像素艺术风格，边缘清晰，复古游戏精灵图质感，大面积扁平像素色块，主体像游戏角色素材一样尽量铺满画布，减少无内容像素',
-  },
   {
     id: 'cute-chibi',
     label: '可爱 Q 版',
-    description: '圆润造型，明亮 pastel 配色',
-    promptSuffix: 'chibi 像素画风格，头身比夸张，头大身小，造型圆润可爱，明亮柔和 pastel 配色，卡哇伊视觉，使用近景头像或半身构图，让角色填充大部分画面',
-  },
-  {
-    id: 'flat-minimal',
-    label: '扁平简约',
-    description: '少细节，大色块，易于拼豆',
-    promptSuffix: '扁平极简像素画风格，细节尽量少，干净的几何像素色块，海报式裁切，主体大，背景边距很小',
+    description: '大头小身，柔和配色',
+    promptSuffix: 'Redraw the subject as a cute chibi character with an oversized head, a small body, round shapes, and a soft pastel palette.',
   },
   {
     id: 'retro-8bit',
-    label: '8-bit 复古',
-    description: '怀旧游戏像素风',
-    promptSuffix: '8-bit 复古游戏风格，粗颗粒像素，小色板，NES 游戏精灵质感，主体像游戏素材表中的角色一样接近铺满画布',
+    label: '复古游戏精灵',
+    description: '粗颗粒、少颜色的游戏角色',
+    promptSuffix: 'Redraw the subject as a retro video-game character with chunky shapes and a small bright palette.',
   },
   {
-    id: 'perler-craft',
-    label: '拼豆工艺感',
-    description: '扁平拼豆插画风格',
-    promptSuffix: '适合拼豆工艺的扁平像素画风格，简化为清晰像素图案，不要照片感，不要真实豆子质感，主体在画面中占主导，像可直接量化的像素图纸',
+    id: 'flat-minimal',
+    label: '扁平图标',
+    description: '几何大色块，细节很少',
+    promptSuffix: 'Redraw the subject as a flat geometric icon with very few shapes and almost no detail.',
   },
   {
     id: 'simplified-real',
     label: '写实简化',
-    description: '保留轮廓，减少渐变与细节',
-    promptSuffix: '简化半写实像素画风格，保留清晰轮廓，减少阴影和细节，使用适合拼豆的扁平像素颜色，近景半身或物体特写，周围空间尽量少',
+    description: '保留轮廓、比例和主要特征',
+    promptSuffix: 'Redraw the subject as a simplified illustration that keeps the original proportions, silhouette, and recognizable features.',
   },
 ]
 
-export const DEFAULT_NEGATIVE_PROMPT = '不要背景色'
-
-function buildPixelSpecPrompt(gridSize?: number, maxColors?: number) {
-  const parts: string[] = []
-  if (gridSize) {
-    parts.push(
-      `像素画尺寸要求：以 ${gridSize}px 作为图片宽度，也就是横向 ${gridSize} 个像素点/格；每格就是一个独立像素点，并对应最终拼豆图纸的一颗豆。输出图像可以被放大显示，但必须保持 ${gridSize}px 宽像素画的低分辨率逻辑和方形像素边缘。请按这个宽度规划细节密度，不要生成超出该宽度承载能力的细碎纹理。`,
-    )
-    if (gridSize <= 56) {
-      parts.push('目标像素画很小，请进一步简化为图标级构图，只保留主体轮廓和关键特征，减少五官细节、纹理、小物件和背景元素，使用更大的像素色块。')
-    }
-  }
-  if (maxColors) {
-    parts.push(`颜色数量要求：整张像素画最多使用 ${maxColors} 种主要颜色，请使用有限调色板、大色块和高对比，不要用渐变、噪点或大量相近色来模拟阴影。`)
-  }
-  return parts.join(' ')
+const STYLE_ALIASES: Record<string, string> = {
+  'pixel-classic': 'flat-minimal',
+  'perler-craft': 'retro-8bit',
 }
 
-export function buildAgnesPrompt(styleId: string, extraPrompt = '', gridSize?: number, maxColors?: number, negativePrompt = DEFAULT_NEGATIVE_PROMPT, hasEffectReference = false) {
-  const style = AGNES_STYLE_PRESETS.find((item) => item.id === styleId)
+export const DEFAULT_NEGATIVE_PROMPT = ''
+
+const RENDERING_PROMPT = 'Use bold clean outlines, solid color fills, and a very limited palette. Replace gradients, textures, and shadows with flat color. Remove the background and replace it with one plain color.'
+const COMPOSITION_PROMPT = 'Center the subject and make it fill most of the frame with a tight crop.'
+
+function resolveStyle(styleId: string) {
+  const resolvedId = STYLE_ALIASES[styleId] ?? styleId
+  return AGNES_STYLE_PRESETS.find((item) => item.id === resolvedId)
+}
+
+function simplificationPrompt(gridSize?: number) {
+  if (!gridSize) return ''
+  if (gridSize <= 32) return 'Simplify to icon level: keep the silhouette and only two or three key features, with no facial detail.'
+  if (gridSize <= 56) return 'Use simplified features and large shapes.'
+  return ''
+}
+
+export function buildAgnesPrompt(
+  styleId: string,
+  extraPrompt = '',
+  gridSize?: number,
+  maxColors?: number,
+  negativePrompt = DEFAULT_NEGATIVE_PROMPT,
+  hasEffectReference = false,
+) {
+  const style = resolveStyle(styleId)
   if (!style) throw new Error('请选择一种 AI 风格')
 
-  const parts = [AGNES_BASE_PROMPT, style.promptSuffix]
-  const pixelSpecPrompt = buildPixelSpecPrompt(gridSize, maxColors)
-  if (pixelSpecPrompt) parts.push(pixelSpecPrompt)
-  if (hasEffectReference) {
-    parts.push('本次输入包含两张参考图：第一张是主体参考图，请保留第一张图中的主体、轮廓、姿态和主要特征；第二张是效果参考图，只参考它的像素画风格、色块大小、轮廓处理、简化程度、构图密度和颜色控制方式。不要复制第二张图中的主体、文字、背景或具体内容，最终输出仍以第一张主体参考图为准。')
-  }
+  const parts = [
+    style.promptSuffix,
+    'Keep the main subject, pose, and key identifying features of the first reference image.',
+  ]
   const trimmedExtra = extraPrompt.trim()
   if (trimmedExtra) parts.push(trimmedExtra)
-  parts.push(
-    '最终输出要求：这是一张用于后续量化的像素画源图。请保证像素块边界清楚、色块连续、轮廓明确；不要输出平滑插画、高清照片、复杂背景、文字、水印、边框或装饰网格。构图要求：近景、紧凑裁切，主体居中，主体占画面 75-90%。背景使用纯色或极简背景，只在必要时保留很窄边距。移除干扰性的场景和背景细节。避免宽白边、过多留白、远景构图，以及小主体漂浮在空画布中的效果。',
-  )
+  parts.push(RENDERING_PROMPT)
+  const simplification = simplificationPrompt(gridSize)
+  if (simplification) parts.push(simplification)
+  if (maxColors && maxColors <= 16) parts.push('Use two-tone shading at most.')
+  parts.push(COMPOSITION_PROMPT)
+  if (hasEffectReference) {
+    parts.push('Use the first image as the subject reference. Use the second image only as the style reference for shape language, palette, and simplification. Do not copy the second image subject, text, or background.')
+  }
   const trimmedNegative = negativePrompt.trim()
-  if (trimmedNegative) parts.push(`负面提示词：${trimmedNegative}。`)
+  if (trimmedNegative) parts.push(`Additional instruction: ${trimmedNegative}`)
   return parts.join(' ')
 }
