@@ -1,3 +1,5 @@
+import { deltaE76, rgbToLab, type Lab } from '../quantize/color'
+
 async function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -14,13 +16,48 @@ async function loadImage(file: File): Promise<HTMLImageElement> {
   })
 }
 
-function isBackgroundPixel(r: number, g: number, b: number, a: number) {
-  if (a < 80) return true
+function isNearWhite(r: number, g: number, b: number) {
   const min = Math.min(r, g, b)
   const max = Math.max(r, g, b)
   if (min > 238 && max - min < 18) return true
   if (min > 228 && max - min < 30) return true
   return false
+}
+
+function detectBackground(width: number, height: number, data: Uint8ClampedArray): Lab | null {
+  const points = [
+    [0, 0],
+    [width - 1, 0],
+    [0, height - 1],
+    [width - 1, height - 1],
+    [Math.floor(width / 2), 0],
+    [Math.floor(width / 2), height - 1],
+    [0, Math.floor(height / 2)],
+    [width - 1, Math.floor(height / 2)],
+  ]
+  const samples: Lab[] = []
+  for (const [x, y] of points) {
+    const offset = (y * width + x) * 4
+    if (data[offset + 3] < 80) continue
+    samples.push(rgbToLab(data[offset], data[offset + 1], data[offset + 2]))
+  }
+  if (samples.length < 5) return null
+  let best = samples[0]
+  let bestCount = 0
+  for (const candidate of samples) {
+    const count = samples.filter((sample) => deltaE76(candidate, sample) < 8).length
+    if (count > bestCount) {
+      best = candidate
+      bestCount = count
+    }
+  }
+  return bestCount >= 5 ? best : null
+}
+
+function isBackgroundPixel(r: number, g: number, b: number, a: number, background: Lab | null) {
+  if (a < 80) return true
+  if (background) return deltaE76(rgbToLab(r, g, b), background) < 14
+  return isNearWhite(r, g, b)
 }
 
 function canvasToFile(canvas: HTMLCanvasElement, fileName: string, mimeType = 'image/png') {
@@ -42,7 +79,7 @@ interface ContentBounds {
   maxY: number
 }
 
-function findContentBounds(width: number, height: number, data: Uint8ClampedArray): ContentBounds | null {
+function findContentBounds(width: number, height: number, data: Uint8ClampedArray, background: Lab | null): ContentBounds | null {
   let minX = width
   let minY = height
   let maxX = 0
@@ -52,7 +89,7 @@ function findContentBounds(width: number, height: number, data: Uint8ClampedArra
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4
-      if (isBackgroundPixel(data[offset], data[offset + 1], data[offset + 2], data[offset + 3])) continue
+      if (isBackgroundPixel(data[offset], data[offset + 1], data[offset + 2], data[offset + 3], background)) continue
       found = true
       if (x < minX) minX = x
       if (y < minY) minY = y
@@ -102,7 +139,8 @@ export async function cropSubjectFromImage(file: File): Promise<File> {
 
   ctx.drawImage(image, 0, 0)
   const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  const initialBounds = findContentBounds(canvas.width, canvas.height, initialData.data)
+  const background = detectBackground(canvas.width, canvas.height, initialData.data)
+  const initialBounds = findContentBounds(canvas.width, canvas.height, initialData.data, background)
   if (!initialBounds) return file
 
   let cropped = cropCanvasToBounds(canvas, initialBounds)
@@ -115,7 +153,8 @@ export async function cropSubjectFromImage(file: File): Promise<File> {
     const croppedCtx = cropped.getContext('2d', { willReadFrequently: true })
     if (croppedCtx) {
       const innerData = croppedCtx.getImageData(0, 0, cropped.width, cropped.height)
-      const innerBounds = findContentBounds(cropped.width, cropped.height, innerData.data)
+      const innerBackground = detectBackground(cropped.width, cropped.height, innerData.data)
+      const innerBounds = findContentBounds(cropped.width, cropped.height, innerData.data, innerBackground)
       if (innerBounds) {
         const innerW = innerBounds.maxX - innerBounds.minX + 1
         const innerH = innerBounds.maxY - innerBounds.minY + 1

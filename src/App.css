@@ -500,6 +500,63 @@ h1 {
   min-height: 48px;
 }
 
+.ai-candidates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-candidates button {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: #fff;
+}
+
+.ai-candidates button.active {
+  border-color: rgba(104, 68, 236, 0.72);
+}
+
+.ai-candidates img {
+  display: block;
+  width: 100%;
+  height: 72px;
+  object-fit: cover;
+}
+
+.advanced-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px dashed rgba(23, 19, 31, 0.16);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.advanced-dither {
+  display: grid;
+  gap: 8px;
+}
+
+.advanced-dither > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .board-panel {
   display: grid;
   gap: 12px;

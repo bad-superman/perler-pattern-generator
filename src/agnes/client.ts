@@ -8,6 +8,8 @@ interface GenerateAgnesImageOptions {
   gridSize?: number
   maxColors?: number
   size?: string
+  ratio?: string
+  count?: number
   prompt?: string
   negativePrompt?: string
   hasEffectReference?: boolean
@@ -17,6 +19,7 @@ interface AgnesGenerateResponse {
   imageBase64?: string
   mimeType?: string
   imageUrl?: string
+  images?: AgnesGenerateResponse[]
 }
 
 async function responseToFile(payload: AgnesGenerateResponse, styleId: string): Promise<File> {
@@ -37,12 +40,14 @@ async function responseToFile(payload: AgnesGenerateResponse, styleId: string): 
   throw new Error('AI 未返回有效图片')
 }
 
-export async function generateAgnesImage(options: GenerateAgnesImageOptions): Promise<File> {
+export async function generateAgnesImages(options: GenerateAgnesImageOptions): Promise<File[]> {
   const prompt = options.prompt ?? buildAgnesPrompt(options.styleId, options.extraPrompt, options.gridSize, options.maxColors, options.negativePrompt, options.hasEffectReference ?? Boolean(options.effectFile))
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('styleId', options.styleId)
   if (options.size) form.append('size', options.size)
+  if (options.ratio) form.append('ratio', options.ratio)
+  if (options.count && options.count > 1) form.append('count', String(Math.min(4, Math.round(options.count))))
   if (options.file) form.append('image', options.file)
   if (options.effectFile) form.append('effectImage', options.effectFile)
 
@@ -61,11 +66,17 @@ export async function generateAgnesImage(options: GenerateAgnesImageOptions): Pr
   }
   if (!payload) throw new Error('AI 返回数据无效')
 
-  return responseToFile(payload, options.styleId)
+  const images = payload.images?.length ? payload.images : [payload]
+  return Promise.all(images.map((image) => responseToFile(image, options.styleId)))
 }
 
-export async function pickAgnesSize(file?: File, shape: 'ratio' | 'square' = 'ratio'): Promise<string> {
-  if (!file) return '1024x1024'
+export async function generateAgnesImage(options: GenerateAgnesImageOptions): Promise<File> {
+  const [image] = await generateAgnesImages(options)
+  return image
+}
+
+export async function pickAgnesSize(file?: File, shape: 'ratio' | 'square' = 'ratio'): Promise<{ size: string; ratio: string }> {
+  if (!file) return { size: '1K', ratio: '1:1' }
 
   const url = URL.createObjectURL(file)
   try {
@@ -76,12 +87,12 @@ export async function pickAgnesSize(file?: File, shape: 'ratio' | 'square' = 'ra
       element.src = url
     })
 
-    if (shape === 'square') return '1024x1024'
+    if (shape === 'square') return { size: '1K', ratio: '1:1' }
 
     const ratio = image.width / Math.max(image.height, 1)
-    if (ratio >= 1.2) return '1024x768'
-    if (ratio <= 0.8) return '768x1024'
-    return '1024x1024'
+    if (ratio >= 1.2) return { size: '1K', ratio: '4:3' }
+    if (ratio <= 0.8) return { size: '1K', ratio: '3:4' }
+    return { size: '1K', ratio: '1:1' }
   } finally {
     URL.revokeObjectURL(url)
   }

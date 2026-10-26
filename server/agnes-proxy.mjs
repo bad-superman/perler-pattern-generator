@@ -72,7 +72,7 @@ function fileToDataUri(filePart) {
   return `data:${mimeType};base64,${filePart.data.toString('base64')}`
 }
 
-async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri }) {
+async function callAgnes({ prompt, size, ratio, imageDataUri, effectImageDataUri }) {
   const body = {
     model: MODEL,
     prompt,
@@ -81,6 +81,7 @@ async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri }) {
       response_format: 'b64_json',
     },
   }
+  if (ratio) body.ratio = ratio
 
   const inputImages = [imageDataUri, effectImageDataUri].filter(Boolean)
   if (inputImages.length > 0) {
@@ -123,6 +124,23 @@ async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri }) {
   }
 }
 
+async function callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri }) {
+  const total = Math.min(4, Math.max(1, Number(count) || 1))
+  const request = { prompt, size, ratio, imageDataUri, effectImageDataUri }
+  if (total === 1) {
+    const image = await callAgnes(request)
+    return { ...image, images: [image] }
+  }
+
+  const settled = await Promise.allSettled(Array.from({ length: total }, () => callAgnes(request)))
+  const images = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value)
+  if (!images.length) {
+    const reason = settled.find((item) => item.status === 'rejected')
+    throw reason?.reason instanceof Error ? reason.reason : new Error('AI 生成失败')
+  }
+  return { ...images[0], images }
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -160,7 +178,9 @@ const server = createServer(async (req, res) => {
     const rawBody = await readRequestBody(req)
     const parts = parseMultipart(rawBody, boundaryMatch[1])
     const prompt = parts.find((part) => part.name === 'prompt')?.data.toString('utf8').trim()
-    const size = parts.find((part) => part.name === 'size')?.data.toString('utf8').trim() || '1024x1024'
+    const size = parts.find((part) => part.name === 'size')?.data.toString('utf8').trim() || '1K'
+    const ratio = parts.find((part) => part.name === 'ratio')?.data.toString('utf8').trim() || ''
+    const count = Number(parts.find((part) => part.name === 'count')?.data.toString('utf8').trim() || '1')
     const imagePart = parts.find((part) => part.name === 'image' && part.data.length > 0)
     const effectImagePart = parts.find((part) => part.name === 'effectImage' && part.data.length > 0)
 
@@ -180,7 +200,7 @@ const server = createServer(async (req, res) => {
 
     const imageDataUri = imagePart ? fileToDataUri(imagePart) : undefined
     const effectImageDataUri = effectImagePart ? fileToDataUri(effectImagePart) : undefined
-    const result = await callAgnes({ prompt, size, imageDataUri, effectImageDataUri })
+    const result = await callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri })
     sendJson(res, 200, result)
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'AI 生成失败'

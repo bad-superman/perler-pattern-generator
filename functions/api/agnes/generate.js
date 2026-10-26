@@ -37,7 +37,7 @@ async function blobToDataUri(blob) {
   return `data:${mimeType};base64,${bytesToBase64(bytes)}`
 }
 
-async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri, env }) {
+async function callAgnes({ prompt, size, ratio, imageDataUri, effectImageDataUri, env }) {
   const apiKey = env?.AGNES_API_KEY ?? ''
   const apiBase = env?.AGNES_API_BASE ?? DEFAULT_API_BASE
   const model = env?.AGNES_MODEL ?? DEFAULT_MODEL
@@ -52,6 +52,7 @@ async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri, env }
       response_format: 'b64_json',
     },
   }
+  if (ratio) body.ratio = ratio
 
   const inputImages = [imageDataUri, effectImageDataUri].filter(Boolean)
   if (inputImages.length > 0) {
@@ -86,10 +87,29 @@ async function callAgnes({ prompt, size, imageDataUri, effectImageDataUri, env }
   }
 }
 
+async function callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri, env }) {
+  const total = Math.min(4, Math.max(1, Number(count) || 1))
+  const request = { prompt, size, ratio, imageDataUri, effectImageDataUri, env }
+  if (total === 1) {
+    const image = await callAgnes(request)
+    return { ...image, images: [image] }
+  }
+
+  const settled = await Promise.allSettled(Array.from({ length: total }, () => callAgnes(request)))
+  const images = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value)
+  if (!images.length) {
+    const reason = settled.find((item) => item.status === 'rejected')
+    throw reason?.reason instanceof Error ? reason.reason : new Error('AI 生成失败')
+  }
+  return { ...images[0], images }
+}
+
 async function handlePost(context) {
   const formData = await context.request.formData()
   const prompt = String(formData.get('prompt') ?? '').trim()
-  const size = String(formData.get('size') ?? '1024x1024').trim() || '1024x1024'
+  const size = String(formData.get('size') ?? '1K').trim() || '1K'
+  const ratio = String(formData.get('ratio') ?? '').trim()
+  const count = Number(formData.get('count') ?? '1')
   const image = formData.get('image')
   const effectImage = formData.get('effectImage')
 
@@ -110,7 +130,7 @@ async function handlePost(context) {
     effectImageDataUri = await blobToDataUri(effectImage)
   }
 
-  const result = await callAgnes({ prompt, size, imageDataUri, effectImageDataUri, env: context.env })
+  const result = await callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri, env: context.env })
   return jsonResponse(200, result)
 }
 
