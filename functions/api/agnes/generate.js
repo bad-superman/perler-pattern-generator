@@ -14,9 +14,9 @@ function jsonResponse(status, payload) {
 
 function bytesToBase64(bytes) {
   let binary = ''
-  const chunkSize = 0x8000
+  const chunkSize = 0x400
   for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+    binary += String.fromCharCode.apply(null, bytes.subarray(index, index + chunkSize))
   }
   return btoa(binary)
 }

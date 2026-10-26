@@ -58,7 +58,32 @@ async function cropToRatio(file: File, ratio: string) {
   return canvasToFile(canvas, file.name.replace(/\.\w+$/, '') + '-ref.png')
 }
 
+async function shrinkForUpload(file: File, maxSide = 1280) {
+  const image = await loadImage(file)
+  const scale = Math.min(1, maxSide / Math.max(image.width, image.height, 1))
+  const width = Math.max(1, Math.round(image.width * scale))
+  const height = Math.max(1, Math.round(image.height * scale))
+  if (scale === 1 && file.size < 900_000) return file
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return file
+  ctx.drawImage(image, 0, 0, width, height)
+  return new Promise<File>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('无法压缩参考图'))
+        return
+      }
+      resolve(new File([blob], file.name.replace(/\.\w+$/, '') + '-ref.jpg', { type: 'image/jpeg' }))
+    }, 'image/jpeg', 0.85)
+  })
+}
+
 export async function prepareReferenceImage(file: File, ratio: string) {
   const cropped = await cropSubjectFromImage(file)
-  return cropToRatio(cropped, ratio)
+  const framed = await cropToRatio(cropped, ratio)
+  return shrinkForUpload(framed)
 }

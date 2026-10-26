@@ -66,10 +66,20 @@ export async function generateAgnesImages(options: GenerateAgnesImageOptions): P
     signal: AbortSignal.timeout(360_000),
   })
 
-  const payload = await response.json().catch(() => null) as (AgnesGenerateResponse & { error?: string }) | null
+  const raw = await response.text()
+  const payload = (() => {
+    try {
+      return JSON.parse(raw) as AgnesGenerateResponse & { error?: string }
+    } catch {
+      return null
+    }
+  })()
   if (!response.ok) {
     if (!payload) {
-      throw new Error(`AI 服务未就绪（${response.status}），请检查 Cloudflare Functions 与环境变量`)
+      const snippet = raw.replace(/\s+/g, ' ').trim().slice(0, 160)
+      throw new Error(snippet
+        ? `AI 服务异常（${response.status}）：${snippet}`
+        : `AI 服务未就绪（${response.status}），请检查 Cloudflare Functions 与环境变量`)
     }
     throw new Error(payload.error ?? `AI 生成失败（${response.status}）`)
   }
