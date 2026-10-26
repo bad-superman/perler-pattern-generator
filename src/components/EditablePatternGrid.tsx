@@ -163,7 +163,7 @@ export function EditablePatternGrid({
       })
     })
     ctx.putImageData(imageData, 0, 0)
-  }, [pattern, gridCols, gridRows, showMiniMap])
+  }, [pattern, gridCols, gridRows, showMiniMap, minimapOpen])
 
   useEffect(() => {
     const viewport = viewportRef.current
