@@ -60,7 +60,8 @@ export function initAnalytics() {
   }
 
   if (clarityId) {
-    Clarity.init(clarityId)
+    const clarityQueue = (window as Window & { clarity?: unknown }).clarity
+    if (typeof clarityQueue !== 'function') Clarity.init(clarityId)
     for (const [key, value] of Object.entries(defaultContext())) Clarity.setTag(key, value)
   }
   enabled = true
