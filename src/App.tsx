@@ -18,6 +18,7 @@ import {
   recalculatePaletteCounts,
   replaceColorGlobally,
 } from './pattern/ops'
+import { isDarkHex } from './pattern/color'
 import { EMPTY_CELL_HEX, type BeadCell, type PaletteColor } from './pattern/types'
 import {
   DEFAULT_PALETTE_BRAND,
@@ -73,11 +74,37 @@ function getGridSizeHint(size: number) {
   return '更清晰但豆数多，导出图纸也更大'
 }
 
-function getExportCellSize(gridCols: number, gridRows: number) {
-  const longSide = Math.max(gridCols, gridRows)
-  if (longSide >= 96) return 14
-  if (longSide > 64) return 16
-  return 18
+const EXPORT_MARGIN = 32
+const EXPORT_GRID_PAD = 12
+const EXPORT_CELL_GAP = 1
+const EXPORT_CELL_MIN = 14
+const EXPORT_CELL_MAX = 36
+
+// Pick the largest cell that still lets the whole sheet fit inside `maxSide`,
+// so bead codes stay legible instead of being shrunk away by limitExportCanvas.
+function getExportCellSize(gridCols: number, gridRows: number, maxSide: number) {
+  const longSide = Math.max(1, gridCols, gridRows)
+  const available = maxSide - EXPORT_MARGIN * 2 - EXPORT_GRID_PAD * 2
+  const fit = Math.floor(available / longSide) - EXPORT_CELL_GAP
+  return Math.max(EXPORT_CELL_MIN, Math.min(EXPORT_CELL_MAX, fit))
+}
+
+// Largest bold font (px) at which every label fits inside a cell of `cellSize`.
+function fitExportLabelFont(ctx: CanvasRenderingContext2D, labels: readonly string[], cellSize: number) {
+  const maxWidth = cellSize - 3
+  let size = Math.max(6, Math.floor(cellSize * 0.5))
+  for (; size > 6; size -= 1) {
+    ctx.font = `800 ${size}px "Noto Sans SC", sans-serif`
+    let fits = true
+    for (const label of labels) {
+      if (ctx.measureText(label).width > maxWidth) {
+        fits = false
+        break
+      }
+    }
+    if (fits) break
+  }
+  return size
 }
 
 function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEntry[] }) {
@@ -153,10 +180,6 @@ function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEn
       </div>
     </div>
   )
-}
-
-function isDarkHex(hex: string) {
-  return Number.parseInt(hex.slice(1), 16) < 0x777777
 }
 
 function formatLegendLabel(color: Pick<PaletteColor, 'code' | 'name'>) {
@@ -264,12 +287,12 @@ function buildPatternExportCanvas(
   palette: PaletteColor[],
   gridCols: number,
   gridRows: number,
-  renderMode: RenderMode,
   activeCells: number,
+  maxSide: number,
 ) {
-  const exportCell = getExportCellSize(gridCols, gridRows)
-  const gap = 1
-  const gridPad = 12
+  const exportCell = getExportCellSize(gridCols, gridRows, maxSide)
+  const gap = EXPORT_CELL_GAP
+  const gridPad = EXPORT_GRID_PAD
   const gridInnerW = gridCols * exportCell + Math.max(0, gridCols - 1) * gap
   const gridInnerH = gridRows * exportCell + Math.max(0, gridRows - 1) * gap
   const gridW = gridInnerW + gridPad * 2
@@ -283,7 +306,7 @@ function buildPatternExportCanvas(
   const legendW = legendCols * legendItemW + legendPad * 2
   const legendH = legendRows * legendItemH + legendPad * 2 + 28
 
-  const margin = 32
+  const margin = EXPORT_MARGIN
   const headerH = 72
   const contentW = Math.max(gridW, legendW, 640)
   const canvas = document.createElement('canvas')
@@ -329,19 +352,20 @@ function buildPatternExportCanvas(
     gridCols,
     gridRows,
   )
-  if (renderMode === 'symbols') {
-    for (let y = 0; y < gridRows; y += 1) {
-      for (let x = 0; x < gridCols; x += 1) {
-        const cell = pattern[y][x]
-        if (cell.colorIndex < 0) continue
-        const px = gridX + gridPad + x * (exportCell + gap)
-        const py = gridY + gridPad + y * (exportCell + gap)
-        ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
-        ctx.font = `800 ${Math.max(7, Math.floor(exportCell * 0.42))}px "Noto Sans SC", sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(cell.symbol, px + exportCell / 2, py + exportCell / 2 + 0.5)
-      }
+  // Bead codes are always written into the exported sheet (regardless of the
+  // on-screen render mode) so users can identify colors from the saved image.
+  const labelFont = fitExportLabelFont(ctx, palette.map((color) => color.symbol), exportCell)
+  ctx.font = `800 ${labelFont}px "Noto Sans SC", sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (let y = 0; y < gridRows; y += 1) {
+    for (let x = 0; x < gridCols; x += 1) {
+      const cell = pattern[y][x]
+      if (cell.colorIndex < 0 || !cell.symbol) continue
+      const px = gridX + gridPad + x * (exportCell + gap)
+      const py = gridY + gridPad + y * (exportCell + gap)
+      ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
+      ctx.fillText(cell.symbol, px + exportCell / 2, py + exportCell / 2 + 0.5)
     }
   }
 
@@ -873,7 +897,8 @@ function App() {
       const exportPalette = [...palette]
         .filter((color) => color.count > 0)
         .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
-      const canvas = limitExportCanvas(buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, renderMode, activeCells), isMobile ? 4096 : 8192)
+      const maxExportSide = isMobile ? 4096 : 8192
+      const canvas = limitExportCanvas(buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, activeCells, maxExportSide), maxExportSide)
       const blob = await canvasToBlob(canvas)
       const filename = `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`
       if (isMobile) {

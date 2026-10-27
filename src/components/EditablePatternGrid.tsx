@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { isDarkHex } from '../pattern/color'
 import type { BeadCell } from '../pattern/types'
 
 export type EditorTool = 'paint' | 'erase' | 'fill' | 'pan' | 'replace'
@@ -32,15 +33,6 @@ interface ViewportMetrics {
   height: number
   scrollLeft: number
   scrollTop: number
-}
-
-function isDarkHex(hex: string) {
-  const normalized = hex.replace('#', '')
-  const value = parseInt(normalized, 16)
-  const r = (value >> 16) & 255
-  const g = (value >> 8) & 255
-  const b = value & 255
-  return (r * 299 + g * 587 + b * 114) / 1000 < 128
 }
 
 function hexToRgb(hex: string) {
