@@ -255,6 +255,7 @@
 .m-about .bead-logo { display: block; margin-bottom: 12px; }
 .m-about p { margin: 0 0 16px; line-height: 1.7; font-size: 14px; }
 .m-about a { color: #7c4dff; font-size: 13px; }
+.analytics-note { margin: 8px 0 0; color: rgba(23, 19, 31, 0.62); font-size: 12px; line-height: 1.5; }
 
 .m-promo a { display: block; color: inherit; text-decoration: none; }
 .m-promo-frame {

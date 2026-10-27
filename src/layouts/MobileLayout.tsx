@@ -6,6 +6,7 @@ import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, type AiFraming } from '../agne
 import type { BeadPaletteEntry, PaletteBrand } from '../palettes'
 import type { BeadCell, PaletteColor } from '../pattern/types'
 import type { BoardShape, DitherMode } from '../quantize'
+import type { PatternTrigger } from '../analytics'
 import '../styles/mobile.css'
 
 const QUICK_SIZES = [52, 104, 156, 208]
@@ -40,7 +41,7 @@ export interface MobileLayoutProps {
   cleanupIsolated: boolean
   dither: DitherMode
   updateQuantize: (partial: Partial<{ removeBackground: boolean; cleanupIsolated: boolean; dither: DitherMode }>) => void
-  regenerate: (grid?: number, colors?: number, shape?: BoardShape) => void
+  regenerate: (grid?: number, colors?: number, shape?: BoardShape, trigger?: PatternTrigger) => void
   boardRowsInput: number
   setBoardRowsInput: (rows: number) => void
   createBoard: () => void
@@ -94,6 +95,7 @@ export interface MobileLayoutProps {
   error: string
   promoUrl: string
   promoImage: string
+  onPromoClick: () => void
 }
 
 function AboutPage() {
@@ -102,6 +104,7 @@ function AboutPage() {
       <h2>关于</h2>
       <BeadLogo size={72} />
       <p>拼豆是把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。上传图片后，可以在手机上直接生成色号图纸、调整颜色，并保存到相册。</p>
+      <p className="analytics-note">使用情况统计由 PostHog 与 Microsoft Clarity 处理，用于了解功能是否好用。</p>
       <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备2024067456号-3</a>
     </section>
   )
@@ -111,7 +114,7 @@ const PROMO_SLIDES = [
   { key: 'kit', image: '', label: '融豆拼拼 2.6mm 全色套装' },
 ]
 
-function PromoCarousel({ promoUrl, promoImage }: { promoUrl: string; promoImage: string }) {
+function PromoCarousel({ promoUrl, promoImage, onPromoClick }: { promoUrl: string; promoImage: string; onPromoClick: () => void }) {
   const slides = PROMO_SLIDES.map((slide) => ({ ...slide, image: slide.image || promoImage }))
   const [index, setIndex] = useState(0)
   const [phase, setPhase] = useState<'idle' | 'move' | 'reset'>('idle')
@@ -143,7 +146,7 @@ function PromoCarousel({ promoUrl, promoImage }: { promoUrl: string; promoImage:
 
   return (
     <section className="m-card m-promo" aria-label="推广" aria-roledescription="carousel">
-      <a href={promoUrl} target="_blank" rel="noopener noreferrer">
+      <a href={promoUrl} target="_blank" rel="noopener noreferrer" onClick={onPromoClick}>
         <div
           className="m-promo-frame"
           onTouchStart={(event) => { event.currentTarget.dataset.x = String(event.changedTouches[0]?.clientX ?? 0) }}
@@ -207,13 +210,13 @@ export function MobileLayout(props: MobileLayoutProps) {
     const next = Math.min(208, Math.max(24, Math.round(raw / 4) * 4))
     props.setGridSize(next)
     setCustomSize(String(next))
-    if (props.sourceMode !== 'board') props.regenerate(next, props.maxColors, props.shape)
+    if (props.sourceMode !== 'board') props.regenerate(next, props.maxColors, props.shape, 'grid_size')
   }
 
   function commitColors(next: number) {
     const value = Math.min(props.colorSliderMax, Math.max(4, next))
     props.setMaxColors(value)
-    if (props.sourceMode !== 'board') props.regenerate(props.gridSize, value, props.shape)
+    if (props.sourceMode !== 'board') props.regenerate(props.gridSize, value, props.shape, 'max_colors')
   }
 
   const modeLabel = props.sourceMode === 'ai' ? 'AI 生成' : props.sourceMode === 'board' ? '画板绘制' : '本地转换'
@@ -269,7 +272,7 @@ export function MobileLayout(props: MobileLayoutProps) {
                 ))}
               </div>
             </div>
-            <textarea className="m-field" rows={2} placeholder="例如：换成纯白背景、去掉文字" value={props.aiPrompt} onChange={(event) => props.setAiPrompt(event.target.value)} />
+            <textarea className="m-field" rows={2} placeholder="例如：换成纯白背景、去掉文字" value={props.aiPrompt} onChange={(event) => props.setAiPrompt(event.target.value)} data-analytics-mask="true" data-clarity-mask="true" />
             <button className="m-disclosure" type="button" onClick={() => setMoreAi((value) => !value)}>
               更多选项 <span>{moreAi ? '︿' : '﹀'}</span>
             </button>
@@ -417,8 +420,8 @@ export function MobileLayout(props: MobileLayoutProps) {
               <>
                 <div className="m-row" style={{ marginTop: 12 }}>形状</div>
                 <div className="m-chips">
-                  <button type="button" className={props.shape === 'ratio' ? 'active' : ''} onClick={() => { props.setShape('ratio'); props.regenerate(props.gridSize, props.maxColors, 'ratio') }}>按原图比例</button>
-                  <button type="button" className={props.shape === 'square' ? 'active' : ''} onClick={() => { props.setShape('square'); props.regenerate(props.gridSize, props.maxColors, 'square') }}>方形</button>
+                  <button type="button" className={props.shape === 'ratio' ? 'active' : ''} onClick={() => { props.setShape('ratio'); props.regenerate(props.gridSize, props.maxColors, 'ratio', 'shape') }}>按原图比例</button>
+                  <button type="button" className={props.shape === 'square' ? 'active' : ''} onClick={() => { props.setShape('square'); props.regenerate(props.gridSize, props.maxColors, 'square', 'shape') }}>方形</button>
                 </div>
                 <label className="check-row"><input type="checkbox" checked={props.removeBackground} onChange={(event) => props.updateQuantize({ removeBackground: event.target.checked })} />去掉连通的纯色背景</label>
                 <label className="check-row"><input type="checkbox" checked={props.cleanupIsolated} onChange={(event) => props.updateQuantize({ cleanupIsolated: event.target.checked })} />清理孤立豆</label>
@@ -433,7 +436,7 @@ export function MobileLayout(props: MobileLayoutProps) {
         )}
       </section>
 
-      <PromoCarousel promoUrl={props.promoUrl} promoImage={props.promoImage} />
+      <PromoCarousel promoUrl={props.promoUrl} promoImage={props.promoImage} onPromoClick={props.onPromoClick} />
       </>}
 
       {page === 'app' && hasPattern && !props.isEditing && (

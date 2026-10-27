@@ -29,6 +29,7 @@ import {
   type PaletteBrand,
 } from './palettes'
 import { quantizeToPalette, type DitherMode } from './quantize'
+import { fileTraits, registerContext, track, type PatternTrigger } from './analytics'
 import './App.css'
 
 type BoardShape = 'ratio' | 'square'
@@ -151,6 +152,7 @@ function HeroCarousel({ paletteColors }: { paletteColors: readonly BeadPaletteEn
             rel="noopener noreferrer"
             aria-hidden={activeSlide !== 1}
             aria-label="查看融豆拼拼 2.6mm 融合豆全色套装推广"
+            onClick={() => track('promo_clicked', { placement: 'desktop_hero' })}
           >
             <img src={PROMO_AD_IMAGE} alt="融豆拼拼 2.6mm 融合豆全色套装" />
             <span className="ad-badge">推广</span>
@@ -483,6 +485,7 @@ function App() {
   const debugAiImageUrlRef = useRef('')
   const effectReferencePreviewRef = useRef('')
   const [paperScale, setPaperScale] = useState(1)
+  const editSessionRef = useRef<{ startedAt: number; strokes: number; replaces: number; undos: number } | null>(null)
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
   const cellSize = renderMode === 'symbols' ? 20 : 14
@@ -498,6 +501,14 @@ function App() {
   )
 
   const isEditing = previewMode === 'edit' && pattern.length > 0
+
+  useEffect(() => {
+    registerContext({
+      viewport: isMobile ? 'mobile' : 'desktop',
+      source_mode: sourceMode,
+      palette_brand: paletteBrand,
+    })
+  }, [isMobile, sourceMode, paletteBrand])
   const activeSelectedPaletteIndex = palette.length
     ? Math.min(Math.max(selectedPaletteIndex, 0), palette.length - 1)
     : 0
@@ -510,11 +521,14 @@ function App() {
       if (!meta || key !== 'z') return
       event.preventDefault()
       if (event.shiftKey) redoPatternEdit()
-      else undoPatternEdit()
+      else {
+        if (canUndo && editSessionRef.current) editSessionRef.current.undos += 1
+        undoPatternEdit()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isEditing, undoPatternEdit, redoPatternEdit])
+  }, [isEditing, canUndo, undoPatternEdit, redoPatternEdit])
 
   useEffect(() => {
     if (!pattern.length) return undefined
@@ -578,6 +592,7 @@ function App() {
 
   function handleEffectReferenceFile(file?: File) {
     if (!file) return
+    track('image_selected', { role: 'effect', ...fileTraits(file) })
     if (effectReferencePreviewRef.current) URL.revokeObjectURL(effectReferencePreviewRef.current)
     const url = URL.createObjectURL(file)
     effectReferencePreviewRef.current = url
@@ -586,17 +601,48 @@ function App() {
   }
 
 
+  function startEditSession() {
+    editSessionRef.current = { startedAt: Date.now(), strokes: 0, replaces: 0, undos: 0 }
+  }
+
+  function finishEditSession() {
+    const session = editSessionRef.current
+    if (!session) return
+    editSessionRef.current = null
+    track('edit_session_ended', {
+      duration_ms: Date.now() - session.startedAt,
+      stroke_count: session.strokes,
+      replace_count: session.replaces,
+      undo_count: session.undos,
+    })
+  }
+
+  function aiTraits() {
+    return {
+      style_id: aiStyleId,
+      framing: aiFraming,
+      candidate_count: aiCandidateCount,
+      has_extra_prompt: aiPrompt.trim().length > 0,
+      has_negative_prompt: aiNegativePrompt.trim().length > 0,
+      has_effect_reference: effectReferenceName.length > 0,
+      grid_size: gridSize,
+      max_colors: maxColors,
+    }
+  }
+
   async function generatePattern(
     file: File,
     nextGridSize = gridSize,
     nextMaxColors = maxColors,
     nextShape = shape,
     nextPaletteBrand = paletteBrand,
-    options?: { updatePreview?: boolean; sharpQuantize?: boolean },
-  ) {
+    options?: { updatePreview?: boolean; sharpQuantize?: boolean; trigger?: PatternTrigger },
+  ): Promise<boolean> {
     const updatePreview = options?.updatePreview ?? true
     const sharpQuantize = options?.sharpQuantize ?? false
+    const trigger = options?.trigger ?? 'regenerate'
     const beadPalette = getPaletteColors(nextPaletteBrand)
+    const startedAt = performance.now()
     setError('')
     setIsProcessing(true)
     lastSourceFileRef.current = file
@@ -653,9 +699,26 @@ function App() {
         grid.push(row)
       }
 
+      const usedPalette = selectedPalette.filter((color) => color.count > 0)
       resetPatternHistory({
         pattern: grid,
-        palette: selectedPalette.filter((color) => color.count > 0),
+        palette: usedPalette,
+      })
+      finishEditSession()
+      track('pattern_generated', {
+        trigger,
+        palette_brand: nextPaletteBrand,
+        grid_size: nextGridSize,
+        grid_cols: cols,
+        grid_rows: rows,
+        max_colors: nextMaxColors,
+        shape: nextShape,
+        color_count: usedPalette.length,
+        cell_count: usedPalette.reduce((sum, color) => sum + color.count, 0),
+        remove_background: quantizeOptions.removeBackground,
+        cleanup_isolated: quantizeOptions.cleanupIsolated,
+        dither: quantizeOptions.dither,
+        duration_ms: Math.round(performance.now() - startedAt),
       })
       setPreviewMode('view')
       setReplaceFromSymbol('')
@@ -665,8 +728,15 @@ function App() {
       if (window.matchMedia('(max-width: 620px)').matches) {
         window.requestAnimationFrame(() => previewPanelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
       }
+      return true
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成失败，请换一张图片试试')
+      track('pattern_generate_failed', {
+        trigger,
+        stage: 'quantize',
+        duration_ms: Math.round(performance.now() - startedAt),
+      })
+      return false
     } finally {
       setIsProcessing(false)
     }
@@ -674,9 +744,11 @@ function App() {
 
   async function handleFile(file?: File) {
     if (!file) return
+    track('image_selected', { role: 'source', ...fileTraits(file) })
     if (sourceMode === 'board') {
       setSourceMode('local')
-      await generatePattern(file)
+      track('source_mode_selected', { mode: 'local' })
+      await generatePattern(file, gridSize, maxColors, shape, paletteBrand, { trigger: 'upload' })
       return
     }
     if (sourceMode === 'ai') {
@@ -685,7 +757,7 @@ function App() {
       setError('')
       return
     }
-    await generatePattern(file)
+    await generatePattern(file, gridSize, maxColors, shape, paletteBrand, { trigger: 'upload' })
   }
 
   async function generateWithAi() {
@@ -697,6 +769,10 @@ function App() {
 
     setError('')
     setIsAiGenerating(true)
+    const startedAt = performance.now()
+    const traits = aiTraits()
+    let stage: 'prepare' | 'generate' | 'quantize' = 'prepare'
+    track('ai_generate_started', traits)
     try {
       setAiStage('正在准备参考图…')
       const { size, ratio } = await pickAgnesSize(refFile, shape, aiFraming)
@@ -711,6 +787,7 @@ function App() {
         hasEffectReference: Boolean(effectFile),
         framing: aiFraming,
       })
+      stage = 'generate'
       setAiStage('AI 生成中…')
       if (debugMode) {
         setDebugPrompt(prompt)
@@ -729,6 +806,7 @@ function App() {
         effectFile,
         framing: aiFraming,
       })
+      stage = 'quantize'
       setAiStage('正在量化成图纸…')
       const candidates = aiFiles.map((file) => ({ url: URL.createObjectURL(file), file }))
       setAiCandidateIndex(0)
@@ -738,12 +816,17 @@ function App() {
       })
       if (debugMode) updateDebugAiImage(aiFiles[0])
       const croppedFile = await cropSubjectFromImage(aiFiles[0])
-      await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
+      const quantized = await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
         updatePreview: false,
         sharpQuantize: true,
+        trigger: 'ai',
       })
+      const durationMs = Math.round(performance.now() - startedAt)
+      if (quantized) track('ai_generate_completed', { ...traits, duration_ms: durationMs })
+      else track('ai_generate_failed', { ...traits, stage, duration_ms: durationMs })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
+      track('ai_generate_failed', { ...traits, stage, duration_ms: Math.round(performance.now() - startedAt) })
     } finally {
       setIsAiGenerating(false)
     }
@@ -754,7 +837,7 @@ function App() {
     if (partial.removeBackground !== undefined) setRemoveBackground(partial.removeBackground)
     if (partial.cleanupIsolated !== undefined) setCleanupIsolated(partial.cleanupIsolated)
     if (partial.dither !== undefined) setDither(partial.dither)
-    if (sourceMode !== 'board') void regenerate()
+    if (sourceMode !== 'board') void regenerate(gridSize, maxColors, shape, paletteBrand, 'quantize')
   }
 
   async function applyAiCandidate(index: number) {
@@ -763,10 +846,12 @@ function App() {
     setAiCandidateIndex(index)
     if (debugMode) updateDebugAiImage(candidate.file)
     const croppedFile = await cropSubjectFromImage(candidate.file)
-    await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
+    const quantized = await generatePattern(croppedFile, gridSize, maxColors, shape, paletteBrand, {
       updatePreview: false,
       sharpQuantize: true,
+      trigger: 'candidate',
     })
+    if (quantized) track('ai_candidate_applied', { index, candidate_count: aiCandidateCount })
   }
 
   function handleSelectPaletteColor(index: number) {
@@ -786,6 +871,7 @@ function App() {
   function handleStrokeComplete(cells: Array<{ x: number; y: number }>, paletteIndex: number | null) {
     const nextPattern = applyStroke(pattern, palette, cells, paletteIndex)
     if (nextPattern === pattern) return
+    if (editSessionRef.current) editSessionRef.current.strokes += 1
     commitPatternHistory({
       pattern: nextPattern,
       palette: recalculatePaletteCounts(nextPattern, palette),
@@ -794,6 +880,7 @@ function App() {
 
   function handleApplyColorReplace() {
     if (!replaceFromSymbol || replaceToPaletteIndex < 0) return
+    if (editSessionRef.current) editSessionRef.current.replaces += 1
     commitPatternHistory(replaceColorGlobally(pattern, palette, replaceFromSymbol, replaceToPaletteIndex))
     setReplaceFromSymbol('')
     setReplaceToPaletteIndex(-1)
@@ -801,6 +888,7 @@ function App() {
   }
 
   function exitEditMode() {
+    finishEditSession()
     setPreviewMode('view')
     setEditorTool('paint')
     setIsColorPickerOpen(false)
@@ -809,7 +897,9 @@ function App() {
   }
 
   function enterEditMode() {
-    if (!pattern.length) return
+    if (!pattern.length || previewMode === 'edit') return
+    startEditSession()
+    track('edit_entered', { color_count: palette.filter((color) => color.count > 0).length })
     setPreviewMode('edit')
     setEditorTool('paint')
     setIsColorPickerOpen(false)
@@ -834,6 +924,7 @@ function App() {
       return
     }
     setBoardConfirm(false)
+    finishEditSession()
 
     const nextPalette = createBoardStarterPalette(activePaletteColors)
     resetPatternHistory({
@@ -853,6 +944,9 @@ function App() {
     setPreviewMode('edit')
     setEditorTool('paint')
     setError('')
+    startEditSession()
+    track('board_created', { cols, rows })
+    track('edit_entered', { color_count: nextPalette.length })
   }
 
   async function regenerate(
@@ -860,6 +954,7 @@ function App() {
     nextMaxColors = maxColors,
     nextShape = shape,
     nextPaletteBrand = paletteBrand,
+    trigger: PatternTrigger = 'regenerate',
   ) {
     if (previewMode === 'edit' && canUndo) {
       const confirmed = window.confirm('重新生成将覆盖当前编辑，是否继续？')
@@ -871,6 +966,7 @@ function App() {
       await generatePattern(file, nextGridSize, nextMaxColors, nextShape, nextPaletteBrand, {
         updatePreview: sourceMode !== 'ai',
         sharpQuantize: sourceMode === 'ai',
+        trigger,
       })
     }
   }
@@ -884,7 +980,7 @@ function App() {
     const nextMaxColors = Math.min(maxColors, getPaletteSize(brand), MAX_COLOR_LIMIT)
     setPaletteBrand(brand)
     setMaxColors(nextMaxColors)
-    void regenerate(gridSize, nextMaxColors, shape, brand)
+    void regenerate(gridSize, nextMaxColors, shape, brand, 'palette')
   }
 
   async function exportPng() {
@@ -892,6 +988,12 @@ function App() {
     setIsExporting(true)
     setExportNotice('')
     const startedAt = Date.now()
+    let outcome: 'downloaded' | 'share' | 'share_aborted' | 'share_sheet' | null = null
+    const exportTraits = {
+      render_mode: renderMode,
+      color_count: palette.filter((color) => color.count > 0).length,
+      cell_count: activeCells,
+    }
     try {
       await document.fonts.ready
       const exportPalette = [...palette]
@@ -907,30 +1009,60 @@ function App() {
         if (typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
           try {
             await navigator.share(shareData)
+            outcome = 'share'
             setExportNotice('请在分享面板中选择“存储图像”保存到相册')
             return
           } catch (cause) {
-            if (cause instanceof DOMException && cause.name === 'AbortError') return
+            if (cause instanceof DOMException && cause.name === 'AbortError') {
+              outcome = 'share_aborted'
+              return
+            }
           }
         }
         if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl)
         setExportSheetUrl(URL.createObjectURL(blob))
+        outcome = 'share_sheet'
         return
       }
       saveAs(blob, filename)
+      outcome = 'downloaded'
       setExportNotice('PNG 已开始下载')
       if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
       exportNoticeTimerRef.current = window.setTimeout(() => setExportNotice(''), 2800)
     } catch (cause) {
       setError(`导出失败：${formatExportError(cause)}`)
+      track('pattern_export_failed', { ...exportTraits, duration_ms: Date.now() - startedAt })
     } finally {
+      if (outcome) track('pattern_exported', { ...exportTraits, outcome, duration_ms: Date.now() - startedAt })
       const elapsed = Date.now() - startedAt
       if (elapsed < 600) await new Promise((resolve) => window.setTimeout(resolve, 600 - elapsed))
       setIsExporting(false)
     }
   }
 
+  function undoEdit() {
+    if (!canUndo) return
+    if (editSessionRef.current) editSessionRef.current.undos += 1
+    undoPatternEdit()
+  }
+
+  function printPattern() {
+    track('print_clicked', { render_mode: renderMode })
+    window.print()
+  }
+
+  function downloadExportSheet() {
+    saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)
+    track('pattern_exported', {
+      outcome: 'sheet_downloaded',
+      render_mode: renderMode,
+      color_count: palette.filter((color) => color.count > 0).length,
+      cell_count: activeCells,
+    })
+  }
+
   function switchSourceMode(mode: SourceMode) {
+    if (mode !== sourceMode) track('source_mode_selected', { mode })
     setSourceMode(mode)
     if (mode === 'ai') {
       setGridSize((current) => (current > AI_GRID_RECOMMEND_MAX ? AI_DEFAULT_GRID_SIZE : current))
@@ -1000,7 +1132,7 @@ function App() {
         cleanupIsolated={cleanupIsolated}
         dither={dither}
         updateQuantize={updateQuantize}
-        regenerate={(nextGrid = gridSize, nextColors = maxColors, nextShape = shape) => void regenerate(nextGrid, nextColors, nextShape)}
+        regenerate={(nextGrid = gridSize, nextColors = maxColors, nextShape = shape, trigger = 'regenerate') => void regenerate(nextGrid, nextColors, nextShape, paletteBrand, trigger)}
         boardRowsInput={boardRowsInput}
         setBoardRowsInput={setBoardRowsInput}
         createBoard={createBoardPattern}
@@ -1035,7 +1167,7 @@ function App() {
         brandColors={activePaletteColors}
         canUndo={canUndo}
         canRedo={canRedo}
-        undo={undoPatternEdit}
+        undo={undoEdit}
         redo={redoPatternEdit}
         onStroke={handleStrokeComplete}
         onSelectColor={handleSelectPaletteColor}
@@ -1050,10 +1182,11 @@ function App() {
         isExporting={isExporting}
         exportSheetUrl={exportSheetUrl}
         closeExportSheet={() => { if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}
-        downloadSheet={() => saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)}
+        downloadSheet={downloadExportSheet}
         error={error}
         promoUrl={PROMO_AD_URL}
         promoImage={PROMO_AD_IMAGE}
+        onPromoClick={() => track('promo_clicked', { placement: 'mobile_carousel' })}
       />
       </>
     )
@@ -1071,14 +1204,14 @@ function App() {
               {sourceMode === 'board' ? <Pencil size={18} /> : <ImageUp size={18} />}
               {sourceMode === 'board' ? '创建画板' : '上传图片'}
             </button>
-            <button className="ghost-btn desktop-only" type="button" onClick={() => window.print()} disabled={!pattern.length}>
+            <button className="ghost-btn desktop-only" type="button" onClick={printPattern} disabled={!pattern.length}>
               <Printer size={18} /> 打印图纸
             </button>
           </div>
         </div>
         <div className="hero-side-panel" aria-label="拼豆介绍与推广">
           <HeroCarousel paletteColors={activePaletteColors} />
-          <a className="ad-bar" href={PROMO_AD_URL} target="_blank" rel="noopener noreferrer">
+          <a className="ad-bar" href={PROMO_AD_URL} target="_blank" rel="noopener noreferrer" onClick={() => track('promo_clicked', { placement: 'desktop_bar' })}>
             推荐：融豆拼拼 2.6mm 融合豆全色套装 →
           </a>
         </div>
@@ -1169,6 +1302,8 @@ function App() {
                 <span>补充描述（选填）</span>
                 <textarea
                   className="ai-prompt-input"
+                  data-analytics-mask="true"
+                  data-clarity-mask="true"
                   rows={3}
                   placeholder="例如：放大主体、减少留白；只要人物、不要背景文字"
                   value={aiPrompt}
@@ -1189,6 +1324,8 @@ function App() {
                 <span>补充指令</span>
                 <textarea
                   className="ai-prompt-input"
+                  data-analytics-mask="true"
+                  data-clarity-mask="true"
                   rows={2}
                   placeholder="例如：换成纯白背景、去掉文字和水印"
                   value={aiNegativePrompt}
@@ -1216,9 +1353,9 @@ function App() {
               <small className="control-hint"> {gridSizeHint}{sourceMode === 'ai' ? '；AI 推荐约 52 格' : ''}{sourceMode === 'board' ? '；创建后可手动绘制' : ''}</small>
             </span>
             <input type="range" min="24" max="208" step="4" value={gridSize} onChange={(event) => setGridSize(Number(event.target.value))} onPointerUp={(event) => {
-              if (sourceMode !== 'board') void regenerate(Number(event.currentTarget.value), maxColors, shape)
+              if (sourceMode !== 'board') void regenerate(Number(event.currentTarget.value), maxColors, shape, paletteBrand, 'grid_size')
             }} onKeyUp={(event) => {
-              if (sourceMode !== 'board') void regenerate(Number(event.currentTarget.value), maxColors, shape)
+              if (sourceMode !== 'board') void regenerate(Number(event.currentTarget.value), maxColors, shape, paletteBrand, 'grid_size')
             }} />
             <div className="quick-size-grid" aria-label={sourceMode === 'board' ? '常用画板宽度' : '常用图纸宽度'}>
               {QUICK_GRID_SIZES.map((size) => (
@@ -1228,7 +1365,7 @@ function App() {
                   className={gridSize === size ? 'active' : ''}
                   onClick={() => {
                     setGridSize(size)
-                    if (sourceMode !== 'board') void regenerate(size, maxColors, shape)
+                    if (sourceMode !== 'board') void regenerate(size, maxColors, shape, paletteBrand, 'grid_size')
                   }}
                 >
                   {size} 格
@@ -1242,9 +1379,9 @@ function App() {
               <label>
                 <span>最大颜色数 <b>{maxColors}</b></span>
                 <input type="range" min="4" max={colorSliderMax} step="1" value={maxColors} onChange={(event) => setMaxColors(Number(event.target.value))} onPointerUp={(event) => {
-                  void regenerate(gridSize, Number(event.currentTarget.value), shape)
+                  void regenerate(gridSize, Number(event.currentTarget.value), shape, paletteBrand, 'max_colors')
                 }} onKeyUp={(event) => {
-                  void regenerate(gridSize, Number(event.currentTarget.value), shape)
+                  void regenerate(gridSize, Number(event.currentTarget.value), shape, paletteBrand, 'max_colors')
                 }} />
               </label>
 
@@ -1258,8 +1395,8 @@ function App() {
               <details className="advanced-panel">
                 <summary>更多设置</summary>
               <div className="segmented" role="group" aria-label="图纸形状">
-                <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio') }} type="button">按原图比例</button>
-                <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square') }} type="button">方形 · 左上裁剪</button>
+                <button className={shape === 'ratio' ? 'active' : ''} onClick={() => { setShape('ratio'); void regenerate(gridSize, maxColors, 'ratio', paletteBrand, 'shape') }} type="button">按原图比例</button>
+                <button className={shape === 'square' ? 'active' : ''} onClick={() => { setShape('square'); void regenerate(gridSize, maxColors, 'square', paletteBrand, 'shape') }} type="button">方形 · 左上裁剪</button>
               </div>
               <details className="advanced-panel">
                 <summary>高级量化</summary>
@@ -1310,7 +1447,7 @@ function App() {
             </button>
             {(canUndo || canRedo) && (
               <>
-                <button type="button" className="action-history-btn" onClick={undoPatternEdit} disabled={!canUndo}>
+                <button type="button" className="action-history-btn" onClick={undoEdit} disabled={!canUndo}>
                   <Undo2 size={17} /> 撤销
                 </button>
                 <button type="button" className="action-history-btn" onClick={redoPatternEdit} disabled={!canRedo}>
@@ -1494,7 +1631,7 @@ function App() {
           <img src={exportSheetUrl} alt="拼豆图纸，长按可保存到相册" />
           <p>长按图片，选择“保存到相册”</p>
           <div className="export-sheet-actions">
-            <button type="button" onClick={() => saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)}>下载文件</button>
+            <button type="button" onClick={downloadExportSheet}>下载文件</button>
             <button type="button" onClick={() => { URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}>关闭</button>
           </div>
         </div>
@@ -1534,6 +1671,7 @@ function App() {
         <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
           京ICP备2024067456号-3
         </a>
+        <p className="analytics-note">使用情况统计由 PostHog 与 Microsoft Clarity 处理，用于了解功能是否好用。</p>
       </footer>
     </main>
   )
