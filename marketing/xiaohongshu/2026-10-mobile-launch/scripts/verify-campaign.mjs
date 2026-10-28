@@ -1,8 +1,11 @@
+import { execFile } from 'node:child_process'
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const execFileAsync = promisify(execFile)
 
 export async function assertFile(relativePath) {
   const absolutePath = path.join(root, relativePath)
@@ -50,4 +53,16 @@ for (const name of carousel) {
     throw new Error(`Wrong carousel size: ${name} ${size.width}x${size.height}`)
   }
 }
-console.log(JSON.stringify({ stage: 'carousel', ok: true }))
+const { stdout } = await execFileAsync('ffprobe', [
+  '-v', 'error',
+  '-show_entries', 'stream=width,height,codec_name:format=duration',
+  '-of', 'json',
+  await assertFile('video/mobile-demo.mp4'),
+])
+const probe = JSON.parse(stdout)
+const video = probe.streams.find((stream) => stream.codec_name === 'h264')
+const duration = Number(probe.format.duration)
+if (!video || video.width !== 1080 || video.height !== 1920) throw new Error('Wrong video format')
+if (duration < 20 || duration > 25) throw new Error(`Wrong video duration: ${duration}`)
+
+console.log(JSON.stringify({ stage: 'video', ok: true, duration, video }))
