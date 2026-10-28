@@ -16,6 +16,7 @@ dist-ssr
 .wrangler
 .superpowers/
 .worktrees/
+marketing/xiaohongshu/*/video/frames/
 
 # Editor directories and files
 .vscode/*
