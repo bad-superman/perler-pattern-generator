@@ -24,4 +24,15 @@ const publish = await readFile(await assertFile('copy/publish.md'), 'utf8')
 for (const phrase of ['免费', '无需登录', '主页', '#拼豆图纸']) {
   if (!publish.includes(phrase)) throw new Error(`Copy missing phrase: ${phrase}`)
 }
+const screenshots = [
+  'screenshots/source-card.png',
+  'screenshots/result-symbols.png',
+  'screenshots/result-solid.png',
+  'screenshots/editor.png',
+  'screenshots/export-sheet.png',
+]
+for (const screenshot of screenshots) {
+  const { width, height } = await readPngSize(screenshot)
+  if (width < 300 || height < 200) throw new Error(`Screenshot too small: ${screenshot}`)
+}
 console.log(JSON.stringify({ stage: 'foundation', ok: true }))
