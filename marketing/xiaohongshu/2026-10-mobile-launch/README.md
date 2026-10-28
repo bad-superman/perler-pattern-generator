@@ -37,3 +37,11 @@ node marketing/xiaohongshu/2026-10-mobile-launch/scripts/verify-campaign.mjs
 ## 发布建议
 
 小红书先发 7 页图文，视频作为第二条或同日补充。
+
+## 发布交接
+
+1. 图文按 `carousel/01-cover.png` 到 `carousel/07-cta.png` 的顺序发布。
+2. 首选标题、正文和置顶评论从 `copy/publish.md` 复制。
+3. 视频使用 `video/mobile-demo.mp4`。
+4. 发布前把真实工具入口写入小红书主页简介。
+5. 未来若修改产品界面，依次重新执行截图、组图和视频三个生成脚本，再运行校验脚本。

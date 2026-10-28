@@ -25,6 +25,14 @@ try {
   const page = await context.newPage()
   await page.goto(slidesUrl, { waitUntil: 'load' })
   await page.evaluate(() => document.fonts.ready)
+  const failedImages = await page.locator('img').evaluateAll((images) =>
+    images
+      .filter((image) => !image.complete || image.naturalWidth <= 0)
+      .map((image) => image.getAttribute('src') || image.alt || '<unknown>'),
+  )
+  if (failedImages.length) {
+    throw new Error(`Images failed to decode: ${failedImages.join(', ')}`)
+  }
 
   for (const name of names) {
     const slide = page.locator(`[data-slide="${name}"]`)

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -9,11 +9,23 @@ const execFileAsync = promisify(execFile)
 
 export async function assertFile(relativePath) {
   const absolutePath = path.join(root, relativePath)
-  const info = await stat(absolutePath).catch(() => {
-    throw new Error(`Missing asset: ${relativePath}`)
-  })
+  let info
+  try {
+    info = await stat(absolutePath)
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`Missing asset: ${relativePath}`)
+    throw error
+  }
   if (!info.isFile() || info.size === 0) throw new Error(`Missing asset: ${relativePath}`)
   return absolutePath
+}
+
+async function assertDirectoryEntries(relativePath, expected) {
+  const actual = (await readdir(path.join(root, relativePath))).sort()
+  const wanted = [...expected].sort()
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
+    throw new Error(`Wrong ${relativePath} manifest: ${actual.join(', ')}`)
+  }
 }
 
 export async function readPngSize(relativePath) {
@@ -22,22 +34,14 @@ export async function readPngSize(relativePath) {
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
 }
 
-await assertFile('source/pet-reference.png')
-const publish = await readFile(await assertFile('copy/publish.md'), 'utf8')
-for (const phrase of ['免费', '无需登录', '主页', '#拼豆图纸']) {
-  if (!publish.includes(phrase)) throw new Error(`Copy missing phrase: ${phrase}`)
-}
+const source = ['pet-reference.png']
 const screenshots = [
-  'screenshots/source-card.png',
-  'screenshots/result-symbols.png',
-  'screenshots/result-solid.png',
-  'screenshots/editor.png',
-  'screenshots/export-sheet.png',
+  'source-card.png',
+  'result-symbols.png',
+  'result-solid.png',
+  'editor.png',
+  'export-sheet.png',
 ]
-for (const screenshot of screenshots) {
-  const { width, height } = await readPngSize(screenshot)
-  if (width < 300 || height < 200) throw new Error(`Screenshot too small: ${screenshot}`)
-}
 const carousel = [
   '01-cover.png',
   '02-pain-point.png',
@@ -47,6 +51,41 @@ const carousel = [
   '06-save.png',
   '07-cta.png',
 ]
+const videos = ['mobile-demo.mp4']
+const copy = ['publish.md']
+
+await assertDirectoryEntries('source', source)
+await assertDirectoryEntries('screenshots', screenshots)
+await assertDirectoryEntries('carousel', [...carousel, 'slides.html'])
+await assertDirectoryEntries('video', videos)
+await assertDirectoryEntries('copy', copy)
+
+await assertFile(`source/${source[0]}`)
+const publish = await readFile(await assertFile(`copy/${copy[0]}`), 'utf8')
+for (const phrase of ['免费', '无需登录', '主页', '#拼豆图纸']) {
+  if (!publish.includes(phrase)) throw new Error(`Copy missing phrase: ${phrase}`)
+}
+if (/(二维码|扫码)/u.test(publish)) throw new Error('Copy contains QR-code guidance')
+
+function readSection(heading) {
+  const match = publish.match(
+    new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'mu'),
+  )
+  if (!match?.[1].trim()) throw new Error(`Copy missing section: ${heading}`)
+  return match[1].trim()
+}
+
+readSection('首选标题')
+readSection('正文')
+const tags = readSection('标签').match(/#[^\s`]+/gu) ?? []
+if (tags.length !== 8) throw new Error(`Copy must contain exactly 8 tags, found ${tags.length}`)
+readSection('置顶评论')
+
+for (const screenshot of screenshots) {
+  const relativePath = `screenshots/${screenshot}`
+  const { width, height } = await readPngSize(relativePath)
+  if (width < 300 || height < 200) throw new Error(`Screenshot too small: ${relativePath}`)
+}
 for (const name of carousel) {
   const size = await readPngSize(`carousel/${name}`)
   if (size.width !== 1242 || size.height !== 1660) {
@@ -57,7 +96,7 @@ const { stdout } = await execFileAsync('ffprobe', [
   '-v', 'error',
   '-show_entries', 'stream=width,height,codec_name:format=duration',
   '-of', 'json',
-  await assertFile('video/mobile-demo.mp4'),
+  await assertFile(`video/${videos[0]}`),
 ])
 const probe = JSON.parse(stdout)
 const video = probe.streams.find((stream) => stream.codec_name === 'h264')

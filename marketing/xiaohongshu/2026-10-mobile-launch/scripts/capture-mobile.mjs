@@ -1,4 +1,4 @@
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, devices } from 'playwright'
@@ -8,8 +8,18 @@ const sourcePath = path.join(campaignRoot, 'source/pet-reference.png')
 const screenshotsDir = path.join(campaignRoot, 'screenshots')
 const appUrl = process.env.APP_URL || 'http://127.0.0.1:5173'
 const errors = []
+const screenshotNames = [
+  'source-card.png',
+  'result-symbols.png',
+  'result-solid.png',
+  'editor.png',
+  'export-sheet.png',
+]
 
 await mkdir(screenshotsDir, { recursive: true })
+await Promise.all(
+  screenshotNames.map((name) => rm(path.join(screenshotsDir, name), { force: true })),
+)
 
 const browser = await chromium.launch({ headless: true })
 try {
