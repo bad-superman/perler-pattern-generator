@@ -14,6 +14,7 @@ const framesRoot = path.join(campaignRoot, 'video/frames')
 const videoDir = path.join(campaignRoot, 'video')
 const outputPath = path.join(videoDir, 'mobile-demo.mp4')
 const appUrl = process.env.APP_URL || 'http://127.0.0.1:5173'
+const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
 const sceneDurations = [2, 3, 4, 5, 5, 4]
 const browserErrors = []
 let viteProcess
@@ -31,15 +32,36 @@ function run(command, args, options = {}) {
 
 function isServerReady() {
   return new Promise((resolve) => {
+    let settled = false
+    const finish = (ready) => {
+      if (settled) return
+      settled = true
+      resolve(ready)
+    }
     const request = http.get(appUrl, (response) => {
-      response.resume()
-      resolve(Boolean(response.statusCode && response.statusCode < 500))
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => {
+        body += chunk
+        if (body.length > 1024 * 1024) {
+          response.destroy()
+          finish(false)
+        }
+      })
+      response.on('end', () => {
+        finish(
+          response.statusCode === 200
+          && body.includes('<title>perler-pattern-generator</title>')
+          && body.includes('/src/main.tsx'),
+        )
+      })
+      response.on('error', () => finish(false))
     })
     request.setTimeout(500, () => {
       request.destroy()
-      resolve(false)
+      finish(false)
     })
-    request.on('error', () => resolve(false))
+    request.on('error', () => finish(false))
   })
 }
 
@@ -224,7 +246,7 @@ async function encodeVideo(sceneDirectories) {
   const segmentPaths = []
   for (let index = 0; index < sceneDirectories.length; index += 1) {
     const segmentPath = path.join(framesRoot, `scene-${index + 1}.mp4`)
-    await run('/usr/bin/ffmpeg', [
+    await run(ffmpeg, [
       '-y', '-framerate', String(FPS),
       '-i', path.join(sceneDirectories[index], '%04d.png'),
       '-c:v', 'libx264', '-pix_fmt', 'yuv444p',
@@ -234,7 +256,7 @@ async function encodeVideo(sceneDirectories) {
   }
   const listPath = path.join(framesRoot, 'scenes.txt')
   await writeFile(listPath, segmentPaths.map((segment) => `file '${segment.replaceAll("'", "'\\''")}'`).join('\n'))
-  await run('/usr/bin/ffmpeg', [
+  await run(ffmpeg, [
     '-y', '-f', 'concat', '-safe', '0', '-i', listPath,
     '-vf', 'fps=30,scale=1080:1920:flags=lanczos,format=yuv420p',
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-movflags', '+faststart',

@@ -1,4 +1,4 @@
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, devices } from 'playwright'
@@ -16,13 +16,30 @@ const screenshotNames = [
   'export-sheet.png',
 ]
 
-await mkdir(screenshotsDir, { recursive: true })
-await Promise.all(
-  screenshotNames.map((name) => rm(path.join(screenshotsDir, name), { force: true })),
-)
+const stagingDir = await mkdtemp(path.join(campaignRoot, '.screenshots-staging-'))
+const backupDir = path.join(campaignRoot, `.screenshots-backup-${process.pid}-${Date.now()}`)
 
-const browser = await chromium.launch({ headless: true })
+async function installScreenshots() {
+  let hasBackup = false
+  try {
+    await rename(screenshotsDir, backupDir)
+    hasBackup = true
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+
+  try {
+    await rename(stagingDir, screenshotsDir)
+  } catch (error) {
+    if (hasBackup) await rename(backupDir, screenshotsDir)
+    throw error
+  }
+  if (hasBackup) await rm(backupDir, { recursive: true, force: true })
+}
+
+let browser
 try {
+  browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ ...devices['iPhone 13'] })
   const page = await context.newPage()
 
@@ -34,10 +51,14 @@ try {
   })
 
   async function capture(locator, filename, options) {
-    const outputPath = path.join(screenshotsDir, filename)
+    const outputPath = path.join(stagingDir, filename)
     const screenshot = await locator.screenshot({ ...options, path: outputPath })
     const info = await stat(outputPath)
     if (!screenshot.length || !info.size) throw new Error(`Empty screenshot: ${filename}`)
+    const contents = await readFile(outputPath)
+    if (!contents.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+      throw new Error(`Not PNG: ${filename}`)
+    }
     console.log(outputPath)
   }
 
@@ -71,8 +92,15 @@ try {
   await capture(page, 'export-sheet.png', { fullPage: false })
 
   if (errors.length) throw new Error(`Browser errors:\n${errors.join('\n')}`)
+  const staged = (await readdir(stagingDir)).sort()
+  const expected = [...screenshotNames].sort()
+  if (JSON.stringify(staged) !== JSON.stringify(expected)) {
+    throw new Error(`Wrong staged screenshot manifest: ${staged.join(', ')}`)
+  }
   console.log(JSON.stringify({ errors, shareSupport }))
   await context.close()
+  await installScreenshots()
 } finally {
-  await browser.close()
+  if (browser) await browser.close()
+  await rm(stagingDir, { recursive: true, force: true })
 }

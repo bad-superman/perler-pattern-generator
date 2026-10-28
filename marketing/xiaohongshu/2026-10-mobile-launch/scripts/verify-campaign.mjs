@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +7,7 @@ import { promisify } from 'node:util'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const execFileAsync = promisify(execFile)
+const ffprobe = process.env.FFPROBE_PATH || 'ffprobe'
 
 export async function assertFile(relativePath) {
   const absolutePath = path.join(root, relativePath)
@@ -53,12 +55,52 @@ const carousel = [
 ]
 const videos = ['mobile-demo.mp4']
 const copy = ['publish.md']
+const approvedMedia = [
+  ...source.map((name) => `source/${name}`),
+  ...screenshots.map((name) => `screenshots/${name}`),
+  ...carousel.map((name) => `carousel/${name}`),
+  ...videos.map((name) => `video/${name}`),
+].sort()
 
-await assertDirectoryEntries('source', source)
+async function assertApprovedMedia() {
+  const manifest = await readFile(await assertFile('approved-assets.sha256'), 'utf8')
+  const entries = new Map()
+  for (const [index, line] of manifest.split(/\r?\n/u).entries()) {
+    if (!line) continue
+    const match = line.match(/^([a-f0-9]{64})  (\S+)$/u)
+    if (!match) throw new Error(`Invalid approved hash at line ${index + 1}`)
+    if (entries.has(match[2])) throw new Error(`Duplicate approved asset: ${match[2]}`)
+    entries.set(match[2], match[1])
+  }
+
+  const actualManifest = [...entries.keys()].sort()
+  if (JSON.stringify(actualManifest) !== JSON.stringify(approvedMedia)) {
+    const missing = approvedMedia.filter((name) => !entries.has(name))
+    const extra = actualManifest.filter((name) => !approvedMedia.includes(name))
+    throw new Error(
+      `Wrong approved media manifest: missing [${missing.join(', ')}]; extra [${extra.join(', ')}]`,
+    )
+  }
+
+  for (const relativePath of approvedMedia) {
+    const actual = createHash('sha256')
+      .update(await readFile(await assertFile(relativePath)))
+      .digest('hex')
+    const approved = entries.get(relativePath)
+    if (actual !== approved) {
+      throw new Error(
+        `Approved media hash mismatch: ${relativePath} (expected ${approved}, got ${actual})`,
+      )
+    }
+  }
+}
+
+await assertDirectoryEntries('source', [...source, 'provenance.md'])
 await assertDirectoryEntries('screenshots', screenshots)
 await assertDirectoryEntries('carousel', [...carousel, 'slides.html'])
 await assertDirectoryEntries('video', videos)
 await assertDirectoryEntries('copy', copy)
+await assertApprovedMedia()
 
 await assertFile(`source/${source[0]}`)
 const publish = await readFile(await assertFile(`copy/${copy[0]}`), 'utf8')
@@ -92,7 +134,7 @@ for (const name of carousel) {
     throw new Error(`Wrong carousel size: ${name} ${size.width}x${size.height}`)
   }
 }
-const { stdout } = await execFileAsync('ffprobe', [
+const { stdout } = await execFileAsync(ffprobe, [
   '-v', 'error',
   '-show_entries', 'stream=width,height,codec_name:format=duration',
   '-of', 'json',
