@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>拼豆图纸生成器｜小红书组图</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        background: #ddd8ce;
+        color: #211c2b;
+        font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 32px;
+      }
+
+      .slide {
+        position: relative;
+        width: 1242px;
+        height: 1660px;
+        padding: 88px 90px;
+        overflow: hidden;
+        isolation: isolate;
+      }
+
+      .warm {
+        background: #fffaf1;
+      }
+
+      .lilac {
+        background: #f1edff;
+      }
+
+      .mint {
+        background: #eaf8ef;
+      }
+
+      .purple {
+        background: #6844ec;
+        color: #fff;
+      }
+
+      .orb {
+        position: absolute;
+        z-index: -1;
+        border-radius: 50%;
+        opacity: 0.72;
+      }
+
+      .orb-a {
+        width: 430px;
+        height: 430px;
+        right: 0;
+        top: 0;
+        background: #d9ceff;
+      }
+
+      .orb-b {
+        width: 330px;
+        height: 330px;
+        left: 0;
+        bottom: 80px;
+        background: #ccebd8;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        min-height: 58px;
+        margin: 0 0 28px;
+        padding: 0 28px;
+        border-radius: 999px;
+        background: #6844ec;
+        color: #fff;
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: 2px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 88px;
+        line-height: 1.09;
+        letter-spacing: -3px;
+      }
+
+      h2 {
+        font-size: 72px;
+        line-height: 1.14;
+        letter-spacing: -2px;
+      }
+
+      .purple-text {
+        color: #6844ec;
+      }
+
+      .subtitle {
+        margin-top: 26px;
+        color: #655d70;
+        font-size: 34px;
+        font-weight: 650;
+        line-height: 1.5;
+      }
+
+      .step {
+        position: absolute;
+        top: 93px;
+        right: 90px;
+        color: #6844ec;
+        font-size: 30px;
+        font-weight: 900;
+        letter-spacing: 2px;
+      }
+
+      .cover {
+        padding-top: 82px;
+        background:
+          radial-gradient(circle at 92% 7%, #d8ceff 0 15%, transparent 15.2%),
+          radial-gradient(circle at 8% 92%, #cdebd7 0 14%, transparent 14.2%),
+          #fffaf1;
+      }
+
+      .cover h1 {
+        max-width: 970px;
+      }
+
+      .compare {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 26px;
+        height: 820px;
+        margin-top: 60px;
+      }
+
+      .compare-card {
+        position: relative;
+        overflow: hidden;
+        border: 8px solid #fff;
+        border-radius: 44px;
+        background: #fff;
+        box-shadow: 0 24px 60px rgb(61 43 104 / 18%);
+      }
+
+      .compare-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: top center;
+      }
+
+      .compare-card.result img {
+        object-position: center 7%;
+      }
+
+      .compare-label {
+        position: absolute;
+        left: 24px;
+        top: 24px;
+        z-index: 1;
+        padding: 13px 22px;
+        border-radius: 999px;
+        background: rgb(255 255 255 / 94%);
+        font-size: 27px;
+        font-weight: 900;
+        box-shadow: 0 8px 24px rgb(33 28 43 / 16%);
+      }
+
+      .arrow {
+        position: absolute;
+        z-index: 2;
+        left: 50%;
+        top: 47%;
+        display: grid;
+        width: 90px;
+        height: 90px;
+        transform: translate(-50%, -50%);
+        place-items: center;
+        border: 7px solid #fff;
+        border-radius: 50%;
+        background: #6844ec;
+        color: #fff;
+        font-size: 54px;
+        font-weight: 900;
+        box-shadow: 0 12px 30px rgb(71 48 151 / 28%);
+      }
+
+      .cover-note {
+        margin-top: 42px;
+        text-align: center;
+        color: #3f3550;
+        font-size: 34px;
+        font-weight: 800;
+      }
+
+      .pain {
+        padding-top: 120px;
+      }
+
+      .pain h2 {
+        max-width: 890px;
+        font-size: 82px;
+      }
+
+      .pain-list {
+        display: grid;
+        gap: 30px;
+        margin-top: 78px;
+      }
+
+      .pain-item {
+        display: grid;
+        grid-template-columns: 104px 1fr;
+        min-height: 210px;
+        padding: 36px 44px;
+        align-items: center;
+        border: 3px solid #e8e0d5;
+        border-radius: 40px;
+        background: rgb(255 255 255 / 82%);
+        box-shadow: 0 18px 40px rgb(89 68 51 / 8%);
+      }
+
+      .pain-icon {
+        display: grid;
+        width: 72px;
+        height: 72px;
+        place-items: center;
+        border-radius: 24px;
+        background: #f0ebff;
+        color: #6844ec;
+        font-size: 38px;
+        font-weight: 900;
+      }
+
+      .pain-item strong {
+        display: block;
+        font-size: 42px;
+        line-height: 1.25;
+      }
+
+      .pain-item span {
+        display: block;
+        margin-top: 10px;
+        color: #766c7d;
+        font-size: 28px;
+      }
+
+      .answer {
+        position: absolute;
+        right: 90px;
+        bottom: 100px;
+        left: 90px;
+        padding: 45px 52px;
+        border-radius: 38px;
+        background: #6844ec;
+        color: #fff;
+        font-size: 39px;
+        font-weight: 850;
+        line-height: 1.42;
+        box-shadow: 0 22px 50px rgb(104 68 236 / 26%);
+      }
+
+      .screen-slide {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .screen-slide .eyebrow {
+        align-self: flex-start;
+      }
+
+      .screen-slide h2 {
+        max-width: 930px;
+      }
+
+      .screen-shell {
+        position: relative;
+        display: flex;
+        min-height: 0;
+        margin-top: 46px;
+        padding: 30px;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border: 3px solid rgb(104 68 236 / 13%);
+        border-radius: 54px;
+        background: rgb(255 255 255 / 82%);
+        box-shadow: 0 24px 70px rgb(50 37 92 / 13%);
+      }
+
+      .screen-shell img {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 28px;
+        box-shadow: 0 12px 34px rgb(35 27 57 / 14%);
+      }
+
+      .screen-shell.wide img {
+        width: 100%;
+        height: auto;
+      }
+
+      .screen-shell.phone img {
+        width: auto;
+        height: 100%;
+      }
+
+      .tip {
+        margin-top: 32px;
+        padding: 24px 32px;
+        border-radius: 24px;
+        background: #fff;
+        color: #4a4154;
+        font-size: 29px;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+
+      .save-slide .screen-shell {
+        background: #302b38;
+      }
+
+      .cta {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        background:
+          radial-gradient(circle at 14% 12%, rgb(255 255 255 / 18%) 0 7%, transparent 7.2%),
+          radial-gradient(circle at 91% 89%, rgb(194 239 211 / 32%) 0 15%, transparent 15.2%),
+          #6844ec;
+      }
+
+      .cta::before {
+        content: "";
+        width: 220px;
+        height: 220px;
+        margin-bottom: 70px;
+        border: 18px dotted #fff;
+        border-radius: 50%;
+        background: #f0b36e;
+        box-shadow:
+          inset 0 0 0 30px #fffaf1,
+          0 26px 60px rgb(40 24 105 / 28%);
+      }
+
+      .cta-kicker {
+        font-size: 48px;
+        font-weight: 900;
+        letter-spacing: 2px;
+      }
+
+      .cta-title {
+        margin-top: 48px;
+        padding: 38px 82px;
+        border-radius: 999px;
+        background: #fff;
+        color: #6844ec;
+        font-size: 76px;
+        font-weight: 950;
+        box-shadow: 0 24px 55px rgb(42 25 111 / 30%);
+      }
+
+      .cta-note {
+        margin-top: 54px;
+        font-size: 40px;
+        font-weight: 750;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="slide cover" data-slide="01-cover">
+      <div class="eyebrow">拼豆人的效率工具</div>
+      <h1>一张照片，<br /><span class="purple-text">直接变拼豆色号图</span></h1>
+      <div class="compare">
+        <div class="compare-card">
+          <span class="compare-label">原照片</span>
+          <img src="../source/pet-reference.png" alt="橘猫原照片" />
+        </div>
+        <div class="compare-card result">
+          <span class="compare-label">拼豆图纸</span>
+          <img src="../screenshots/result-solid.png" alt="橘猫拼豆图纸结果" />
+        </div>
+        <div class="arrow">→</div>
+      </div>
+      <p class="cover-note">自动配色 · 标好色号 · 还能手动改</p>
+    </article>
+
+    <article class="slide warm pain" data-slide="02-pain-point">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+      <div class="eyebrow">是不是每次都卡在这里？</div>
+      <h2>想把照片做成拼豆，<br />光是<span class="purple-text">画图纸</span>就劝退</h2>
+      <div class="pain-list">
+        <div class="pain-item">
+          <div class="pain-icon">1</div>
+          <div><strong>像素格一颗颗数</strong><span>眼睛累，还特别容易错位</span></div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-icon">2</div>
+          <div><strong>颜色来回对照</strong><span>相近色太多，选色全靠猜</span></div>
+        </div>
+        <div class="pain-item">
+          <div class="pain-icon">3</div>
+          <div><strong>改一处，牵一片</strong><span>手动画图纸，时间都耗在返工</span></div>
+        </div>
+      </div>
+      <div class="answer">现在：上传照片，几步生成可照着做的色号图纸。</div>
+    </article>
+
+    <article class="slide lilac screen-slide" data-slide="03-upload">
+      <div class="step">01 / 04</div>
+      <div class="eyebrow">先上传</div>
+      <h2>选一张<span class="purple-text">主体清楚</span>的照片</h2>
+      <p class="subtitle">照片确认后，直接开始生成图纸</p>
+      <div class="screen-shell wide">
+        <img src="../screenshots/source-card.png" alt="手机端上传照片界面" />
+      </div>
+      <p class="tip">小技巧：背景越简单，主体轮廓越清楚。</p>
+    </article>
+
+    <article class="slide mint screen-slide" data-slide="04-result">
+      <div class="step">02 / 04</div>
+      <div class="eyebrow">看结果</div>
+      <h2>尺寸、用量、色号，<br /><span class="purple-text">一页全看懂</span></h2>
+      <div class="screen-shell phone">
+        <img src="../screenshots/result-symbols.png" alt="手机端色号图纸结果" />
+      </div>
+      <p class="tip">格子里直接标色号，照图摆豆更省心。</p>
+    </article>
+
+    <article class="slide lilac screen-slide" data-slide="05-edit">
+      <div class="step">03 / 04</div>
+      <div class="eyebrow">再微调</div>
+      <h2>不满意的地方，<br /><span class="purple-text">直接点着改</span></h2>
+      <div class="screen-shell phone">
+        <img src="../screenshots/editor.png" alt="手机端图纸编辑器" />
+      </div>
+      <p class="tip">画笔、橡皮、填充、换色，手机上都能操作。</p>
+    </article>
+
+    <article class="slide warm screen-slide save-slide" data-slide="06-save">
+      <div class="step">04 / 04</div>
+      <div class="eyebrow">最后保存</div>
+      <h2>长按图片，<br /><span class="purple-text">存进手机相册</span></h2>
+      <div class="screen-shell phone">
+        <img src="../screenshots/export-sheet.png" alt="手机端保存图纸界面" />
+      </div>
+      <p class="tip">完整图纸和色号清单一起带走，随时开拼。</p>
+    </article>
+
+    <article class="slide purple cta" data-slide="07-cta">
+      <p class="cta-kicker">免费 · 无需登录</p>
+      <p class="cta-title">工具入口在主页</p>
+      <p class="cta-note">先收藏，做的时候直接找</p>
+    </article>
+  </body>
+</html>

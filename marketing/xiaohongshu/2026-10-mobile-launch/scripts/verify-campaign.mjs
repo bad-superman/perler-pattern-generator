@@ -35,4 +35,19 @@ for (const screenshot of screenshots) {
   const { width, height } = await readPngSize(screenshot)
   if (width < 300 || height < 200) throw new Error(`Screenshot too small: ${screenshot}`)
 }
-console.log(JSON.stringify({ stage: 'foundation', ok: true }))
+const carousel = [
+  '01-cover.png',
+  '02-pain-point.png',
+  '03-upload.png',
+  '04-result.png',
+  '05-edit.png',
+  '06-save.png',
+  '07-cta.png',
+]
+for (const name of carousel) {
+  const size = await readPngSize(`carousel/${name}`)
+  if (size.width !== 1242 || size.height !== 1660) {
+    throw new Error(`Wrong carousel size: ${name} ${size.width}x${size.height}`)
+  }
+}
+console.log(JSON.stringify({ stage: 'carousel', ok: true }))
