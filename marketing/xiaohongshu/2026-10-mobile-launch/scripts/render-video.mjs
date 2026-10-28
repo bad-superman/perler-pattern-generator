@@ -136,8 +136,8 @@ async function setCaption(page, text, dark = true) {
 async function showComparison(page) {
   const [source, result] = await Promise.all([readFile(sourcePath), readFile(resultPath)])
   await page.setContent(`<!doctype html>
-    <html lang="zh-CN"><head><meta charset="utf-8"><style>
-      *{box-sizing:border-box} body{margin:0;width:390px;height:693px;overflow:hidden;background:linear-gradient(150deg,#fff6f0,#f4edff);font-family:"Noto Sans SC",sans-serif;color:#211d25}
+    <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+      *{box-sizing:border-box} html,body{width:100%;height:100%} body{margin:0;overflow:hidden;background:linear-gradient(150deg,#fff6f0,#f4edff);font-family:"Noto Sans SC",sans-serif;color:#211d25}
       main{height:100%;padding:62px 18px 24px;display:flex;flex-direction:column;gap:14px}
       h1{margin:0;text-align:center;font-size:25px;line-height:1.25} p{margin:0;text-align:center;color:#6e6572;font-size:14px}
       .compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0}.card{background:#fff;border-radius:22px;padding:10px;box-shadow:0 12px 30px rgba(61,42,75,.13);display:flex;flex-direction:column;gap:8px;min-width:0}
