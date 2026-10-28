@@ -2,7 +2,7 @@
 
 ## 素材清单
 
-- `source/pet-reference.png`：截图、组图和视频共用的猫咪源图
+- `source/pet-reference.png`：Task 1 为本次宣发专门生成的猫咪源图，不是第三方照片
 - `copy/publish.md`：首选标题、备选标题、正文、标签和置顶评论
 - `screenshots/`：真实手机端上传、结果、编辑和保存界面截图
 - `carousel/01-cover.png` 至 `carousel/07-cta.png`：7 页图文成品

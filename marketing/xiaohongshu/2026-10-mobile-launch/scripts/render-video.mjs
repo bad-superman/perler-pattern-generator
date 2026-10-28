@@ -51,9 +51,14 @@ async function ensureVite() {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const output = []
+  let startupError
   viteProcess.stdout.on('data', (chunk) => output.push(chunk.toString()))
   viteProcess.stderr.on('data', (chunk) => output.push(chunk.toString()))
+  viteProcess.once('error', (error) => {
+    startupError = error
+  })
   for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (startupError) throw new Error(`Vite failed to start: ${startupError.message}`)
     if (viteProcess.exitCode !== null) {
       throw new Error(`Vite stopped before startup:\n${output.join('')}`)
     }
@@ -63,12 +68,25 @@ async function ensureVite() {
   throw new Error(`Timed out starting Vite:\n${output.join('')}`)
 }
 
-function stopVite() {
+async function stopVite() {
   if (!viteProcess?.pid) return
   try {
     process.kill(-viteProcess.pid, 'SIGTERM')
   } catch (error) {
-    if (error.code !== 'ESRCH') throw error
+    if (error.code === 'ESRCH') return
+    throw error
+  }
+  if (viteProcess.exitCode !== null) return
+  await Promise.race([
+    new Promise((resolve) => viteProcess.once('exit', resolve)),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ])
+  if (viteProcess.exitCode === null) {
+    try {
+      process.kill(-viteProcess.pid, 'SIGKILL')
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+    }
   }
 }
 
@@ -142,17 +160,30 @@ async function renderScenes(page) {
   await captureFrames(page, sceneDirectories[0], 2)
 
   await page.goto(appUrl, { waitUntil: 'networkidle' })
+  await page.evaluate(() => {
+    const NativeImage = window.Image
+    window.Image = class CampaignCaptureImage extends NativeImage {
+      set onload(handler) {
+        this.addEventListener('load', (event) => {
+          window.setTimeout(() => handler?.call(this, event), 1500)
+        }, { once: true })
+      }
+    }
+  })
   await setCaption(page, '上传一张宠物照片')
   await captureFrames(page, sceneDirectories[1], 3, async (index) => {
-    if (index === 10) {
+    if (index === 25) {
       await page.locator('input[type=file]').first().setInputFiles(sourcePath)
     }
   })
 
-  await page.locator('.m-result .pattern-grid span').first().waitFor({ timeout: 15000 })
-  await page.locator('.m-result').scrollIntoViewIfNeeded()
   await setCaption(page, '自动生成拼豆图纸')
-  await captureFrames(page, sceneDirectories[2], 4)
+  await captureFrames(page, sceneDirectories[2], 4, async (index) => {
+    if (index === 12) {
+      await page.locator('.m-result .pattern-grid span').first().waitFor({ timeout: 15000 })
+      await page.locator('.m-result').scrollIntoViewIfNeeded()
+    }
+  })
 
   await setCaption(page, '色号、纯色和颜色清单')
   await captureFrames(page, sceneDirectories[3], 5, async (index) => {
@@ -211,11 +242,12 @@ async function encodeVideo(sceneDirectories) {
   ])
 }
 
-await mkdir(videoDir, { recursive: true })
-await rm(framesRoot, { recursive: true, force: true })
-await ensureVite()
-const browser = await chromium.launch({ headless: true })
+let browser
 try {
+  await mkdir(videoDir, { recursive: true })
+  await rm(framesRoot, { recursive: true, force: true })
+  await ensureVite()
+  browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({
     viewport: { width: 390, height: 693 },
     deviceScaleFactor: 1,
@@ -231,16 +263,16 @@ try {
   const sceneDirectories = await renderScenes(page)
   if (browserErrors.length) throw new Error(`Browser errors:\n${browserErrors.join('\n')}`)
   await encodeVideo(sceneDirectories)
+  await rm(framesRoot, { recursive: true, force: true })
   console.log(JSON.stringify({
     output: outputPath,
     duration: sceneDurations.reduce((total, duration) => total + duration, 0),
     frames: sceneDurations.reduce((total, duration) => total + Math.round(duration * FPS), 0),
   }))
-  await context.close()
 } catch (error) {
   console.error(`Frames retained for debugging: ${framesRoot}`)
   throw error
 } finally {
-  await browser.close()
-  stopVite()
+  if (browser) await browser.close()
+  await stopVite()
 }
