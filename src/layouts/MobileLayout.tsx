@@ -97,6 +97,8 @@ export interface MobileLayoutProps {
   closeExportSheet: () => void
   downloadSheet: () => void
   error: string
+  /** Transient notice from the AI flow (e.g. fallback model was used). */
+  aiNotice: string
   promoUrl: string
   promoImage: string
   onPromoClick: () => void
@@ -336,6 +338,7 @@ export function MobileLayout(props: MobileLayoutProps) {
           </button>
         )}
         {props.error && <p className="error">{props.error}</p>}
+        {props.aiNotice && <p className="m-ai-notice" role="status">{props.aiNotice}</p>}
       </section>
 
       <section className="m-card m-result">

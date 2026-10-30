@@ -477,6 +477,7 @@ function App() {
   const [isAiGenerating, setIsAiGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [exportNotice, setExportNotice] = useState('')
+  const [aiNotice, setAiNotice] = useState('')
   const [error, setError] = useState('')
   const [debugMode, setDebugMode] = useState(readDebugModeFromUrl)
   const [debugPrompt, setDebugPrompt] = useState('')
@@ -488,6 +489,7 @@ function App() {
   const effectReferenceRef = useRef<HTMLInputElement>(null)
   const lastSourceFileRef = useRef<File | null>(null)
   const exportNoticeTimerRef = useRef<number | null>(null)
+  const aiNoticeTimerRef = useRef<number | null>(null)
   const debugAiImageUrlRef = useRef('')
   const effectReferencePreviewRef = useRef('')
   const [paperScale, setPaperScale] = useState(1)
@@ -800,7 +802,7 @@ function App() {
         setDebugPrompt(prompt)
         clearDebugAiImage()
       }
-      const aiFiles = await generateAgnesImages({
+      const { files: aiFiles, usedFallback, models: aiModels } = await generateAgnesImages({
         file: preparedFile,
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
@@ -813,6 +815,10 @@ function App() {
         effectFile,
         framing: aiFraming,
       })
+      if (usedFallback) {
+        track('ai_generate_fallback_used', { ...traits, model: aiModels.find(Boolean) ?? '' })
+        showAiNotice('默认模型暂不可用，本次已切换备用模型生成')
+      }
       stage = 'quantize'
       setAiStage('正在量化成图纸…')
       const candidates = aiFiles.map((file) => ({ url: URL.createObjectURL(file), file }))
@@ -829,7 +835,7 @@ function App() {
         trigger: 'ai',
       })
       const durationMs = Math.round(performance.now() - startedAt)
-      if (quantized) track('ai_generate_completed', { ...traits, duration_ms: durationMs })
+      if (quantized) track('ai_generate_completed', { ...traits, duration_ms: durationMs, used_fallback: usedFallback })
       else track('ai_generate_failed', { ...traits, stage, duration_ms: durationMs })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
@@ -1059,6 +1065,12 @@ function App() {
     window.print()
   }
 
+  function showAiNotice(message: string) {
+    setAiNotice(message)
+    if (aiNoticeTimerRef.current) window.clearTimeout(aiNoticeTimerRef.current)
+    aiNoticeTimerRef.current = window.setTimeout(() => setAiNotice(''), 6000)
+  }
+
   function toggleMirror(next: boolean) {
     if (next === mirrored) return
     setMirrored(next)
@@ -1202,6 +1214,7 @@ function App() {
         closeExportSheet={() => { if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}
         downloadSheet={downloadExportSheet}
         error={error}
+        aiNotice={aiNotice}
         promoUrl={PROMO_AD_URL}
         promoImage={PROMO_AD_IMAGE}
         onPromoClick={() => track('promo_clicked', { placement: 'mobile_carousel' })}
@@ -1670,6 +1683,12 @@ function App() {
       {exportNotice && (
         <div className="export-toast" role="status" aria-live="polite">
           {exportNotice}
+        </div>
+      )}
+
+      {aiNotice && (
+        <div className="export-toast ai-notice" role="status" aria-live="polite">
+          {aiNotice}
         </div>
       )}
 

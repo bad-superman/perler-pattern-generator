@@ -16,11 +16,24 @@ interface GenerateAgnesImageOptions {
   framing?: AiFraming
 }
 
+export type AgnesProviderRole = 'default' | 'fallback'
+
 interface AgnesGenerateResponse {
   imageBase64?: string
   mimeType?: string
   imageUrl?: string
+  /** Which configured provider produced this image. Absent on older servers. */
+  provider?: AgnesProviderRole
+  model?: string
   images?: AgnesGenerateResponse[]
+}
+
+export interface AgnesGenerationResult {
+  files: File[]
+  /** True when at least one image came from the fallback provider. */
+  usedFallback: boolean
+  providers: AgnesProviderRole[]
+  models: string[]
 }
 
 async function responseToFile(payload: AgnesGenerateResponse, styleId: string): Promise<File> {
@@ -41,7 +54,7 @@ async function responseToFile(payload: AgnesGenerateResponse, styleId: string): 
   throw new Error('AI 未返回有效图片')
 }
 
-export async function generateAgnesImages(options: GenerateAgnesImageOptions): Promise<File[]> {
+export async function generateAgnesImages(options: GenerateAgnesImageOptions): Promise<AgnesGenerationResult> {
   const prompt = options.prompt ?? buildAgnesPrompt({
     styleId: options.styleId,
     extraPrompt: options.extraPrompt,
@@ -86,11 +99,18 @@ export async function generateAgnesImages(options: GenerateAgnesImageOptions): P
   if (!payload) throw new Error('AI 返回数据无效')
 
   const images = payload.images?.length ? payload.images : [payload]
-  return Promise.all(images.map((image) => responseToFile(image, options.styleId)))
+  const files = await Promise.all(images.map((image) => responseToFile(image, options.styleId)))
+  const providers = images.map((image) => image.provider ?? 'default')
+  return {
+    files,
+    usedFallback: providers.includes('fallback'),
+    providers,
+    models: images.map((image) => image.model ?? ''),
+  }
 }
 
 export async function generateAgnesImage(options: GenerateAgnesImageOptions): Promise<File> {
-  const [image] = await generateAgnesImages(options)
+  const { files: [image] } = await generateAgnesImages(options)
   return image
 }
 

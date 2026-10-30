@@ -193,6 +193,14 @@
 }
 .m-mirror-toggle.active { background: rgba(104, 68, 236, 0.14); border-color: rgba(104, 68, 236, 0.3); color: #17131f; }
 .m-editor .mirror-edit-hint { margin: 0; padding: 8px 14px; font-size: 12px; }
+.m-ai-notice {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(104, 68, 236, 0.08);
+  color: #4d3c86;
+  font-size: 12px;
+}
 .m-stats { margin: 4px 0 0; color: #6f647d; font-size: 12px; }
 
 .m-paper { position: relative; margin-top: 12px; overflow: hidden; }

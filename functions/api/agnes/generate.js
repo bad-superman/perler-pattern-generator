@@ -1,6 +1,10 @@
-const DEFAULT_API_BASE = 'https://apihub.agnes-ai.com/v1/images/generations'
-const DEFAULT_MODEL = 'agnes-image-2.1-flash'
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+import {
+  AiConfigError,
+  MAX_IMAGE_BYTES,
+  describeAiConfig,
+  generateImages,
+  resolveAiConfig,
+} from '../../../server/ai/index.mjs'
 
 function jsonResponse(status, payload) {
   return new Response(JSON.stringify(payload), {
@@ -37,74 +41,11 @@ async function blobToDataUri(blob) {
   return `data:${mimeType};base64,${bytesToBase64(bytes)}`
 }
 
-async function callAgnes({ prompt, size, ratio, imageDataUri, effectImageDataUri, env }) {
-  const apiKey = env?.AGNES_API_KEY ?? ''
-  const apiBase = env?.AGNES_API_BASE ?? DEFAULT_API_BASE
-  const model = env?.AGNES_MODEL ?? DEFAULT_MODEL
-
-  if (!apiKey) throw new Error('请先在 Cloudflare 环境变量中配置 AGNES_API_KEY')
-
-  const body = {
-    model,
-    prompt,
-    size,
-    extra_body: {
-      response_format: 'b64_json',
-    },
-  }
-  if (ratio) body.ratio = ratio
-
-  const inputImages = [imageDataUri, effectImageDataUri].filter(Boolean)
-  if (inputImages.length > 0) {
-    body.extra_body.image = inputImages
-  } else {
-    body.return_base64 = true
-  }
-
-  const response = await fetch(apiBase, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = payload?.error?.message ?? payload?.message ?? `Agnes API 错误（${response.status}）`
-    throw new Error(message)
-  }
-
-  const imageBase64 = payload?.data?.[0]?.b64_json
-  const imageUrl = payload?.data?.[0]?.url
-  if (!imageBase64 && !imageUrl) throw new Error('Agnes API 未返回图片')
-
-  return {
-    imageBase64: imageBase64 ?? undefined,
-    imageUrl: imageUrl ?? undefined,
-    mimeType: 'image/png',
-  }
+function logFallback({ reason, from, to }) {
+  console.warn(`[ai] fallback ${from} → ${to}：${reason}`)
 }
 
-async function callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri, env }) {
-  const total = Math.min(4, Math.max(1, Number(count) || 1))
-  const request = { prompt, size, ratio, imageDataUri, effectImageDataUri, env }
-  if (total === 1) {
-    const image = await callAgnes(request)
-    return { ...image, images: [image] }
-  }
-
-  const settled = await Promise.allSettled(Array.from({ length: total }, () => callAgnes(request)))
-  const images = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value)
-  if (!images.length) {
-    const reason = settled.find((item) => item.status === 'rejected')
-    throw reason?.reason instanceof Error ? reason.reason : new Error('AI 生成失败')
-  }
-  return { ...images[0], images }
-}
-
-async function handlePost(context) {
+async function handlePost(context, aiConfig) {
   const formData = await context.request.formData()
   const prompt = String(formData.get('prompt') ?? '').trim()
   const size = String(formData.get('size') ?? '1K').trim() || '1K'
@@ -130,21 +71,14 @@ async function handlePost(context) {
     effectImageDataUri = await blobToDataUri(effectImage)
   }
 
-  const result = await callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri, env: context.env })
+  const request = { prompt, size, ratio, imageDataUri, effectImageDataUri }
+  const result = await generateImages(request, count, aiConfig, { onFallback: logFallback })
   return jsonResponse(200, result)
 }
 
 export async function onRequest(context) {
   try {
     const { method } = context.request
-
-    if (method === 'GET') {
-      return jsonResponse(200, {
-        ok: true,
-        route: '/api/agnes/generate',
-        hasKey: Boolean(context.env?.AGNES_API_KEY),
-      })
-    }
 
     if (method === 'OPTIONS') {
       return new Response(null, {
@@ -158,12 +92,35 @@ export async function onRequest(context) {
       })
     }
 
-    if (method !== 'POST') {
+    if (method !== 'GET' && method !== 'POST') {
       return jsonResponse(405, { error: 'Method not allowed' })
     }
 
-    return await handlePost(context)
+    // Resolve per request: Pages Functions have no startup hook, and env can
+    // differ between preview and production deployments.
+    let aiConfig
+    try {
+      aiConfig = resolveAiConfig(context.env ?? {})
+    } catch (cause) {
+      if (method === 'GET') {
+        return jsonResponse(200, {
+          ok: false,
+          route: '/api/agnes/generate',
+          error: cause instanceof Error ? cause.message : String(cause),
+        })
+      }
+      throw cause
+    }
+
+    if (method === 'GET') {
+      return jsonResponse(200, { ok: true, route: '/api/agnes/generate', ...describeAiConfig(aiConfig) })
+    }
+
+    return await handlePost(context, aiConfig)
   } catch (cause) {
+    if (cause instanceof AiConfigError) {
+      return jsonResponse(500, { error: cause.message })
+    }
     const message = cause instanceof Error ? cause.message : 'AI 生成失败'
     return jsonResponse(502, { error: message })
   }

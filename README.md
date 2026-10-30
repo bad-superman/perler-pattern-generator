@@ -26,7 +26,11 @@ npm run preview      # 本地预览生产构建
 
 - `AGNES_API_KEY` — Agnes API 密钥（必填，仅存在于服务端）
 - `AGNES_API_BASE` — 默认 `https://apihub.agnes-ai.com/v1/images/generations`
+- `AGNES_MODEL` — 默认模型，默认 `agnes-image-2.1-flash`
+- `AI_FALLBACK_MODEL` — 备用模型（如 `agnes-image-2.5-flash`）；设置后默认模型任何失败都会自动用备用模型重试一次，留空则不启用
 - `AGNES_PROXY_PORT` — 代理端口，默认 `8787`
+
+默认模型与备用模型都可以通过 `AI_DEFAULT_*` / `AI_FALLBACK_*` 独立配置 provider、Key、地址、模型和超时，详见 [`.env.example`](.env.example)。服务端代码在 [`server/ai/`](server/ai/)，本地代理与 Cloudflare Pages Function 共用。`GET /api/agnes/generate` 会返回当前生效的默认/备用模型（不含密钥），可用于排查配置。
 
 **本地转换** 模式行为不变：上传后直接在浏览器端量化，无需 API Key。
 
@@ -55,6 +59,10 @@ npm run preview      # 本地预览生产构建
 | `AGNES_API_KEY` | Encrypted | Agnes API 密钥 |
 | `AGNES_API_BASE` | Plaintext（可选） | 默认 `https://apihub.agnes-ai.com/v1/images/generations` |
 | `AGNES_MODEL` | Plaintext（可选） | 默认 `agnes-image-2.1-flash` |
+| `AI_FALLBACK_MODEL` | Plaintext（可选） | 备用模型，如 `agnes-image-2.5-flash`；默认模型失败时自动重试一次，留空不启用 |
+| `AI_DEFAULT_*` / `AI_FALLBACK_*` | 可选 | 按需独立配置 `PROVIDER`、`API_KEY`、`API_BASE`、`MODEL`、`TIMEOUT_MS`，见 `.env.example` |
+
+部署后访问 `GET /api/agnes/generate` 可确认两组模型是否按预期生效。
 
 ### 4. 部署与验证
 
