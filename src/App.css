@@ -547,6 +547,55 @@ h1 {
   font-size: 13px;
 }
 
+.controls-panel label.mirror-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.64);
+  cursor: pointer;
+}
+
+.mirror-row input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.controls-panel label.mirror-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  justify-content: start;
+}
+
+.mirror-row strong {
+  font-size: 13px;
+}
+
+.mirror-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mirror-row:has(input:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mirror-edit-hint {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(104, 68, 236, 0.08);
+  color: #4d3c86;
+  font-size: 13px;
+}
+
 .advanced-dither {
   display: grid;
   gap: 8px;

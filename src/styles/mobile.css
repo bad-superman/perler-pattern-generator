@@ -181,6 +181,18 @@
 .m-switch { display: flex; padding: 2px; border-radius: 12px; background: rgba(23, 19, 31, 0.05); }
 .m-switch button { height: 32px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: #6f647d; font-weight: 700; }
 .m-switch button.active { background: rgba(104, 68, 236, 0.14); color: #17131f; }
+.m-result-controls { display: flex; align-items: center; gap: 8px; }
+.m-mirror-toggle {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(23, 19, 31, 0.12);
+  border-radius: 12px;
+  background: #fff;
+  color: #6f647d;
+  font-weight: 700;
+}
+.m-mirror-toggle.active { background: rgba(104, 68, 236, 0.14); border-color: rgba(104, 68, 236, 0.3); color: #17131f; }
+.m-editor .mirror-edit-hint { margin: 0; padding: 8px 14px; font-size: 12px; }
 .m-stats { margin: 4px 0 0; color: #6f647d; font-size: 12px; }
 
 .m-paper { position: relative; margin-top: 12px; overflow: hidden; }

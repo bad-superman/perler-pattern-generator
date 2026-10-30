@@ -16,6 +16,14 @@ export function cloneSnapshot(snapshot: PatternSnapshot): PatternSnapshot {
   }
 }
 
+/**
+ * Returns a left-right mirrored view of the pattern. Cells are shared (not
+ * cloned) because the result is only ever read for display and export.
+ */
+export function mirrorPatternHorizontal(pattern: BeadCell[][]): BeadCell[][] {
+  return pattern.map((row) => [...row].reverse())
+}
+
 export function createEmptyCell(): BeadCell {
   return { colorIndex: -1, hex: EMPTY_CELL_HEX, symbol: '' }
 }

@@ -20,12 +20,16 @@ export interface MobileLayoutProps {
   onPickEffect: () => void
   onGenerate: () => void
   pattern: BeadCell[][]
+  /** Pattern as shown in preview/export (mirrored when the toggle is on). */
+  displayPattern: BeadCell[][]
   palette: PaletteColor[]
   gridCols: number
   gridRows: number
   activeCells: number
   renderMode: 'symbols' | 'solid'
   setRenderMode: (mode: 'symbols' | 'solid') => void
+  mirrored: boolean
+  setMirrored: (mirrored: boolean) => void
   cellSize: number
   gridSize: number
   setGridSize: (size: number) => void
@@ -338,9 +342,21 @@ export function MobileLayout(props: MobileLayoutProps) {
         <div className="m-result-head">
           <strong>图纸预览</strong>
           {hasPattern && (
-            <div className="m-switch">
-              <button type="button" className={props.renderMode === 'symbols' ? 'active' : ''} onClick={() => props.setRenderMode('symbols')}>色号</button>
-              <button type="button" className={props.renderMode === 'solid' ? 'active' : ''} onClick={() => props.setRenderMode('solid')}>纯色</button>
+            <div className="m-result-controls">
+              <div className="m-switch">
+                <button type="button" className={props.renderMode === 'symbols' ? 'active' : ''} onClick={() => props.setRenderMode('symbols')}>色号</button>
+                <button type="button" className={props.renderMode === 'solid' ? 'active' : ''} onClick={() => props.setRenderMode('solid')}>纯色</button>
+              </div>
+              <button
+                type="button"
+                className={`m-mirror-toggle ${props.mirrored ? 'active' : ''}`}
+                role="switch"
+                aria-checked={props.mirrored}
+                aria-label="镜像显示"
+                onClick={() => props.setMirrored(!props.mirrored)}
+              >
+                镜像
+              </button>
             </div>
           )}
         </div>
@@ -359,7 +375,7 @@ export function MobileLayout(props: MobileLayoutProps) {
             <div className="m-paper" ref={paperRef} style={{ height: paperViewHeight }}>
               <div style={{ position: 'absolute', top: 0, left: 0, width: paperWidth, height: paperHeight, transform: `scale(${paperScale})`, transformOrigin: 'top left' }}>
                 <div className={`pattern-grid ${props.renderMode} actual-grid`} style={{ gridTemplateColumns: `repeat(${props.gridCols}, ${props.cellSize}px)` }}>
-                  {props.pattern.flat().map((cell, index) => (
+                  {props.displayPattern.flat().map((cell, index) => (
                     <span key={`${index}-${cell.symbol}`} style={{ background: cell.hex, color: cell.colorIndex >= 0 && isDark(cell.hex) ? '#fff' : '#1d1a23' }}>
                       {props.renderMode === 'symbols' && cell.colorIndex >= 0 ? cell.symbol : ''}
                     </span>
@@ -449,6 +465,9 @@ export function MobileLayout(props: MobileLayoutProps) {
 
       {props.isEditing && (
         <div className="m-editor">
+          {props.mirrored && (
+            <p className="mirror-edit-hint" role="note">编辑模式显示原图，镜像仅影响预览与导出。</p>
+          )}
           <PatternEditor
             pattern={props.pattern}
             palette={props.palette}
@@ -482,7 +501,7 @@ export function MobileLayout(props: MobileLayoutProps) {
 
       {zoomOpen && (
         <div className="m-sheet" role="dialog">
-          <PatternZoomView pattern={props.pattern} gridCols={props.gridCols} gridRows={props.gridRows} cellSize={props.cellSize} renderMode={props.renderMode} />
+          <PatternZoomView pattern={props.displayPattern} gridCols={props.gridCols} gridRows={props.gridRows} cellSize={props.cellSize} renderMode={props.renderMode} />
           <button type="button" onClick={() => setZoomOpen(false)}>关闭</button>
         </div>
       )}

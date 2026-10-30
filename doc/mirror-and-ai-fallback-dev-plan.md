@@ -12,7 +12,7 @@
 
 - 镜像只做水平翻转；作用于预览（整体图纸、放大查看、手机端）和导出 PNG；编辑模式始终显示原图。
 - fallback 对**任何失败**都切换（含 4xx），不区分错误类型。
-- 具体 fallback 厂商暂未定，首期只实现 OpenAI images 兼容协议的适配器，但 provider 接口要抽象好，后续加新协议只需新增一个适配器文件。
+- fallback 使用 Agnes 的 `agnes-image-2.5-flash`，与默认模型共用 `AGNES_API_KEY` 和同一接口地址。首期只实现 OpenAI images 兼容协议的适配器，但 provider 接口要抽象好，后续加新协议只需新增一个适配器文件。
 
 ---
 
@@ -180,15 +180,15 @@
    AI_DEFAULT_MODEL=agnes-image-2.1-flash
    AI_DEFAULT_TIMEOUT_MS=150000
 
-   # 备用模型（AI_FALLBACK_API_KEY 留空即不启用 fallback）
-   AI_FALLBACK_PROVIDER=openai-images
+   # 备用模型（AI_FALLBACK_MODEL 留空即不启用 fallback；其余字段留空则继承默认模型的同名配置）
+   AI_FALLBACK_PROVIDER=
    AI_FALLBACK_API_KEY=
    AI_FALLBACK_API_BASE=
-   AI_FALLBACK_MODEL=
-   AI_FALLBACK_TIMEOUT_MS=150000
+   AI_FALLBACK_MODEL=agnes-image-2.5-flash
+   AI_FALLBACK_TIMEOUT_MS=
    ```
 
-2. 兼容规则：`AI_DEFAULT_API_KEY / API_BASE / MODEL` 未设置时分别回退到 `AGNES_API_KEY / AGNES_API_BASE / AGNES_MODEL`；都没有时才报"请先配置 API Key"。fallback 必须显式配置 `AI_FALLBACK_API_KEY` 才启用，其余字段缺省继承 default 的同名值（方便"同一厂商换模型"的场景）。
+2. 兼容规则：`AI_DEFAULT_API_KEY / API_BASE / MODEL` 未设置时分别回退到 `AGNES_API_KEY / AGNES_API_BASE / AGNES_MODEL`；都没有时才报"请先配置 API Key"。fallback 以 `AI_FALLBACK_MODEL` 是否设置决定启用，`PROVIDER / API_KEY / API_BASE / TIMEOUT_MS` 缺省继承 default 的同名值。当前线上场景只需配 `AGNES_API_KEY` + `AI_FALLBACK_MODEL=agnes-image-2.5-flash`。
 
 3. `config.mjs` 对 `PROVIDER` 做白名单校验，未知值启动时抛明确错误。
 
@@ -204,7 +204,7 @@
 
 验收：
 
-- 只配旧变量 / 只配新变量 / 新旧混配 三种情况都能出图，健康检查显示正确的 model。
+- 只配旧变量 / 只配新变量 / 旧变量 + `AI_FALLBACK_MODEL` 三种情况都能出图，健康检查显示正确的 model。
 - `AI_DEFAULT_PROVIDER=foo` 时 proxy 启动报错、Pages Function 返回 500 并带明确文案。
 
 ---

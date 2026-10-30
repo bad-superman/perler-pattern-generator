@@ -15,6 +15,7 @@ import {
   countCellsWithSymbol,
   createEmptyCell,
   ensurePaletteColor,
+  mirrorPatternHorizontal,
   recalculatePaletteCounts,
   replaceColorGlobally,
 } from './pattern/ops'
@@ -291,6 +292,7 @@ function buildPatternExportCanvas(
   gridRows: number,
   activeCells: number,
   maxSide: number,
+  mirrored = false,
 ) {
   const exportCell = getExportCellSize(gridCols, gridRows, maxSide)
   const gap = EXPORT_CELL_GAP
@@ -326,7 +328,8 @@ function buildPatternExportCanvas(
   ctx.fillText('拼豆图纸', margin, margin + 24)
   ctx.font = '400 14px "Noto Sans SC", sans-serif'
   ctx.fillStyle = '#6f647d'
-  ctx.fillText(`${gridCols}×${gridRows} · ${activeCells.toLocaleString()} 颗豆 · ${palette.length} 色`, margin, margin + 48)
+  const subtitle = `${gridCols}×${gridRows} · ${activeCells.toLocaleString()} 颗豆 · ${palette.length} 色${mirrored ? ' · 镜像' : ''}`
+  ctx.fillText(subtitle, margin, margin + 48)
 
   const gridX = margin + (contentW - gridW) / 2
   const gridY = headerH
@@ -429,6 +432,9 @@ function App() {
   const [renderMode, setRenderMode] = useState<RenderMode>(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 620px)').matches ? 'solid' : 'symbols'
   ))
+  // Mirror is a display-only transform: preview and export read `displayPattern`,
+  // while editing and bead counts keep working on the untouched `pattern`.
+  const [mirrored, setMirrored] = useState(false)
   const {
     pattern,
     palette,
@@ -488,6 +494,7 @@ function App() {
   const editSessionRef = useRef<{ startedAt: number; strokes: number; replaces: number; undos: number } | null>(null)
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
+  const displayPattern = useMemo(() => (mirrored ? mirrorPatternHorizontal(pattern) : pattern), [pattern, mirrored])
   const cellSize = renderMode === 'symbols' ? 20 : 14
   const modeLabel = renderMode === 'symbols' ? '色号图纸' : '纯色预览'
   const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
@@ -991,6 +998,7 @@ function App() {
     let outcome: 'downloaded' | 'share' | 'share_aborted' | 'share_sheet' | null = null
     const exportTraits = {
       render_mode: renderMode,
+      mirrored,
       color_count: palette.filter((color) => color.count > 0).length,
       cell_count: activeCells,
     }
@@ -1000,7 +1008,7 @@ function App() {
         .filter((color) => color.count > 0)
         .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
       const maxExportSide = isMobile ? 4096 : 8192
-      const canvas = limitExportCanvas(buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, activeCells, maxExportSide), maxExportSide)
+      const canvas = limitExportCanvas(buildPatternExportCanvas(displayPattern, exportPalette, gridCols, gridRows, activeCells, maxExportSide, mirrored), maxExportSide)
       const blob = await canvasToBlob(canvas)
       const filename = `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`
       if (isMobile) {
@@ -1047,8 +1055,14 @@ function App() {
   }
 
   function printPattern() {
-    track('print_clicked', { render_mode: renderMode })
+    track('print_clicked', { render_mode: renderMode, mirrored })
     window.print()
+  }
+
+  function toggleMirror(next: boolean) {
+    if (next === mirrored) return
+    setMirrored(next)
+    track('mirror_toggled', { mirrored: next })
   }
 
   function downloadExportSheet() {
@@ -1056,6 +1070,7 @@ function App() {
     track('pattern_exported', {
       outcome: 'sheet_downloaded',
       render_mode: renderMode,
+      mirrored,
       color_count: palette.filter((color) => color.count > 0).length,
       cell_count: activeCells,
     })
@@ -1079,7 +1094,7 @@ function App() {
           ['--cell-font' as string]: '9px',
         }}
       >
-        {pattern.flat().map((cell, index) => (
+        {displayPattern.flat().map((cell, index) => (
           <span
             key={`${index}-${cell.symbol}`}
             style={{ background: cell.hex, color: cell.colorIndex >= 0 && isDarkHex(cell.hex) ? '#fff' : '#1d1a23' }}
@@ -1111,12 +1126,15 @@ function App() {
         onPickEffect={() => effectReferenceRef.current?.click()}
         onGenerate={() => void regenerate()}
         pattern={pattern}
+        displayPattern={displayPattern}
         palette={palette}
         gridCols={gridCols}
         gridRows={gridRows}
         activeCells={activeCells}
         renderMode={renderMode}
         setRenderMode={setRenderMode}
+        mirrored={mirrored}
+        setMirrored={toggleMirror}
         cellSize={cellSize}
         gridSize={gridSize}
         setGridSize={setGridSize}
@@ -1435,6 +1453,13 @@ function App() {
             <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">色号图纸</button>
             <button className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')} type="button">纯色预览</button>
           </div>
+          <label className="mirror-row">
+            <input type="checkbox" checked={mirrored} disabled={!pattern.length} onChange={(event) => toggleMirror(event.target.checked)} />
+            <span>
+              <strong>镜像显示</strong>
+              <small>左右翻转预览与导出图</small>
+            </span>
+          </label>
 
           <div className="action-grid">
             {sourceMode === 'board' ? (
@@ -1544,6 +1569,10 @@ function App() {
                   )}
                 </>
               ) : (
+                <>
+                {mirrored && (
+                  <p className="mirror-edit-hint" role="note">编辑模式显示原图，镜像仅影响预览与导出。</p>
+                )}
                 <PatternEditor
                   pattern={pattern}
                   palette={palette}
@@ -1572,6 +1601,7 @@ function App() {
                   onReplaceToPaletteIndexChange={setReplaceToPaletteIndex}
                   onApplyColorReplace={handleApplyColorReplace}
                 />
+                </>
               )
             ) : (
               <div className="empty-state">
@@ -1622,7 +1652,7 @@ function App() {
             <strong>放大查看</strong>
             <button type="button" onClick={() => setZoomOpen(false)}>关闭</button>
           </header>
-          <PatternZoomView pattern={pattern} gridCols={gridCols} gridRows={gridRows} cellSize={cellSize} renderMode={renderMode} />
+          <PatternZoomView pattern={displayPattern} gridCols={gridCols} gridRows={gridRows} cellSize={cellSize} renderMode={renderMode} />
         </div>
       )}
 
