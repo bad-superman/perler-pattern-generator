@@ -14,6 +14,8 @@ dist-ssr
 .env
 .dev.vars
 .wrangler
+.superpowers
+.worktrees
 
 # Editor directories and files
 .vscode/*
