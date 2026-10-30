@@ -1,5 +1,33 @@
 import { ProviderError } from '../types.mjs'
 
+const ERROR_SNIPPET_LENGTH = 160
+
+/**
+ * Build a human-readable message for a non-2xx upstream response. Prefers the
+ * provider's own `error.message`; otherwise falls back to a snippet of the raw
+ * body so rate-limit / gateway errors without a structured payload still
+ * explain themselves. Includes `Retry-After` when the upstream sends one.
+ *
+ * @param {Response} response
+ * @param {any} payload
+ * @param {string} rawBody
+ */
+function describeHttpError(response, payload, rawBody) {
+  const structured = payload?.error?.message ?? payload?.message
+  let message = typeof structured === 'string' && structured.trim()
+    ? structured.trim()
+    : `上游接口错误（${response.status}）`
+
+  if (!structured) {
+    const snippet = rawBody.replace(/\s+/g, ' ').trim().slice(0, ERROR_SNIPPET_LENGTH)
+    if (snippet) message += `：${snippet}`
+  }
+
+  const retryAfter = response.headers.get('retry-after')
+  if (retryAfter) message += `（Retry-After: ${retryAfter}）`
+  return message
+}
+
 /**
  * Adapter for OpenAI-images-compatible endpoints (Agnes apihub, OpenAI
  * gpt-image, and most relay services). Sends a JSON body to `config.apiBase`
@@ -47,10 +75,16 @@ export async function generate(request, config, signal) {
     )
   }
 
-  const payload = await response.json().catch(() => null)
+  const rawBody = await response.text().catch(() => '')
+  let payload = null
+  try {
+    payload = rawBody ? JSON.parse(rawBody) : null
+  } catch {
+    payload = null
+  }
+
   if (!response.ok) {
-    const message = payload?.error?.message ?? payload?.message ?? `上游接口错误（${response.status}）`
-    throw new ProviderError(message, { status: response.status, model: config.model })
+    throw new ProviderError(describeHttpError(response, payload, rawBody), { status: response.status, model: config.model })
   }
 
   const imageBase64 = payload?.data?.[0]?.b64_json
