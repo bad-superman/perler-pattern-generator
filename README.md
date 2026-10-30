@@ -61,8 +61,9 @@ npm run preview      # 本地预览生产构建
 | `AGNES_MODEL` | Plaintext（可选） | 默认 `agnes-image-2.1-flash` |
 | `AI_FALLBACK_MODEL` | Plaintext（可选） | 备用模型，如 `agnes-image-2.5-flash`；默认模型失败时自动重试一次，留空不启用 |
 | `AI_DEFAULT_*` / `AI_FALLBACK_*` | 可选 | 按需独立配置 `PROVIDER`、`API_KEY`、`API_BASE`、`MODEL`、`TIMEOUT_MS`，见 `.env.example` |
+| `ADMIN_GALLERY_TOKEN` | Encrypted | 图库审核口令，配在 Pages 的 Preview 环境。后台地址是 `/admin` |
 
-部署后访问 `GET /api/agnes/generate` 可确认两组模型是否按预期生效。
+Preview 环境的图库数据库是 D1 `perler-gallery-preview`，绑定名 `GALLERY_DB`，已写在 `wrangler.toml`。表已经建好。本地 `npm run dev` 会把图库记在 `.wrangler/gallery-dev.json`，不需要连这块远程库。
 
 ### 4. 部署与验证
 
@@ -70,6 +71,8 @@ npm run preview      # 本地预览生产构建
 
 - **本地转换**：上传图片即可，无需 Key
 - **AI 生成**：上传参考图 → 选风格 → 生成；DevTools 中 `POST /api/agnes/generate` 应返回 200
+
+部署后访问 `GET /api/agnes/generate` 可确认两组模型是否按预期生效。
 
 可选绑定自定义域名：Pages 项目 → **Custom domains**。
 

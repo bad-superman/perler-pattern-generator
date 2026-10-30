@@ -7,6 +7,7 @@ import type { BeadPaletteEntry, PaletteBrand } from '../palettes'
 import type { BeadCell, PaletteColor } from '../pattern/types'
 import type { BoardShape, DitherMode } from '../quantize'
 import type { PatternTrigger } from '../analytics'
+import { GalleryPage } from '../gallery/GalleryPage'
 import '../styles/mobile.css'
 
 const QUICK_SIZES = [52, 104, 156, 208]
@@ -110,7 +111,6 @@ function AboutPage() {
       <h2>关于</h2>
       <BeadLogo size={72} />
       <p>拼豆是把小塑料管按图纸摆到底盘上，再隔着助烫纸熨烫定型，像年轻人的像素版十字绣。上传图片后，可以在手机上直接生成色号图纸、调整颜色，并保存到相册。</p>
-      <p className="analytics-note">使用情况统计由 PostHog 与 Microsoft Clarity 处理，用于了解功能是否好用。</p>
       <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备2024067456号-3</a>
     </section>
   )
@@ -252,6 +252,7 @@ export function MobileLayout(props: MobileLayoutProps) {
                   {label}
                 </button>
               ))}
+              <button type="button" role="menuitem" onClick={() => { setPage('app'); setMenuOpen(false); window.setTimeout(() => document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' }), 0) }}>酷图</button>
               <button type="button" role="menuitem" className={page === 'about' ? 'active' : ''} onClick={() => { setPage('about'); setMenuOpen(false) }}>关于</button>
             </div>
           </>
@@ -456,6 +457,7 @@ export function MobileLayout(props: MobileLayoutProps) {
       </section>
 
       <PromoCarousel promoUrl={props.promoUrl} promoImage={props.promoImage} onPromoClick={props.onPromoClick} />
+      <GalleryPage />
       </>}
 
       {page === 'app' && hasPattern && !props.isEditing && (

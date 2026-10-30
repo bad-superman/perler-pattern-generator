@@ -8,6 +8,7 @@
     "dev:proxy": "node server/agnes-proxy.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "node --test server/gallery/gallery.test.mjs",
     "preview": "vite preview",
     "pages:dev": "npm run build && wrangler pages dev dist"
   },
