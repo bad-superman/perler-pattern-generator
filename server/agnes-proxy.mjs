@@ -6,7 +6,9 @@ import {
   AiConfigError,
   MAX_IMAGE_BYTES,
   describeAiConfig,
+  formatAttemptLog,
   generateImages,
+  maskKey,
   resolveAiConfig,
 } from './ai/index.mjs'
 
@@ -85,8 +87,15 @@ function fileToDataUri(filePart) {
   return `data:${mimeType};base64,${filePart.data.toString('base64')}`
 }
 
-function logFallback({ reason, from, to }) {
-  console.warn(`[ai] fallback ${from} → ${to}：${reason}`)
+const generateHooks = {
+  onAttempt(attempt, config) {
+    const line = formatAttemptLog(attempt, config)
+    if (attempt.ok) console.log(line)
+    else console.warn(line)
+  },
+  onFallback({ from, to }) {
+    console.warn(`[ai] fallback ${from} → ${to}`)
+  },
 }
 
 const server = createServer(async (req, res) => {
@@ -158,7 +167,8 @@ const server = createServer(async (req, res) => {
       imageDataUri: imagePart ? fileToDataUri(imagePart) : undefined,
       effectImageDataUri: effectImagePart ? fileToDataUri(effectImagePart) : undefined,
     }
-    const result = await generateImages(request, count, aiConfig, { onFallback: logFallback })
+    console.log(`[ai] request count=${count} size=${size} ratio=${ratio || '-'} image=${imagePart ? `${Math.round(imagePart.data.length / 1024)}KB` : 'none'} effect=${effectImagePart ? 'yes' : 'no'}`)
+    const result = await generateImages(request, count, aiConfig, generateHooks)
     sendJson(res, 200, result)
   } catch (cause) {
     if (cause instanceof AiConfigError) {
@@ -166,15 +176,17 @@ const server = createServer(async (req, res) => {
       return
     }
     const message = cause instanceof Error ? cause.message : 'AI 生成失败'
-    sendJson(res, 502, { error: message })
+    const attempts = cause && typeof cause === 'object' && 'attempts' in cause ? cause.attempts : undefined
+    console.error(`[ai] request failed: ${message}`)
+    sendJson(res, 502, attempts ? { error: message, attempts } : { error: message })
   }
 })
 
 server.listen(PORT, '127.0.0.1', () => {
   const summary = describeAiConfig(aiConfig)
   console.log(`Agnes proxy listening on http://127.0.0.1:${PORT}`)
-  console.log(`[ai] default: ${summary.default.kind} / ${summary.default.model}`)
-  console.log(summary.fallback
-    ? `[ai] fallback: ${summary.fallback.kind} / ${summary.fallback.model}`
+  console.log(`[ai] default: ${summary.default.kind} / ${summary.default.model} key=${maskKey(aiConfig.default.apiKey)}`)
+  console.log(summary.fallback && aiConfig.fallback
+    ? `[ai] fallback: ${summary.fallback.kind} / ${summary.fallback.model} key=${maskKey(aiConfig.fallback.apiKey)}`
     : '[ai] fallback: 未配置（设置 AI_FALLBACK_MODEL 启用）')
 })

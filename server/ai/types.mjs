@@ -48,6 +48,27 @@
  */
 
 /**
+ * Outcome of one call to one provider. Returned alongside results (and attached
+ * to errors) so the client can report per-provider success/failure metrics.
+ * @typedef {Object} ProviderAttempt
+ * @property {ProviderRole} provider
+ * @property {string} model
+ * @property {boolean} ok
+ * @property {number} status  Upstream HTTP status; 0 for network/timeout failures
+ * @property {string} reason  Empty when ok
+ * @property {number} durationMs
+ */
+
+/**
+ * Last 4 characters of an API key for logs, never the full value.
+ * @param {string} key
+ */
+export function maskKey(key) {
+  if (!key) return '(empty)'
+  return key.length <= 4 ? '****' : `****${key.slice(-4)}`
+}
+
+/**
  * Error raised by a provider adapter. `status` is the upstream HTTP status when
  * available (0 for network/timeout failures).
  */
@@ -61,6 +82,8 @@ export class ProviderError extends Error {
     this.name = 'ProviderError'
     this.status = details.status ?? 0
     this.model = details.model ?? ''
+    /** @type {ProviderAttempt[]} */
+    this.attempts = []
     if (details.cause !== undefined) this.cause = details.cause
   }
 }

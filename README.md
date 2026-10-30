@@ -80,6 +80,24 @@ cp .dev.vars.example .dev.vars   # 填入 AGNES_API_KEY
 npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Functions
 ```
 
+### 6. 查看 Functions 日志（排查 AI 调用问题）
+
+`/api/agnes/generate` 每次请求都会打结构化日志，key 只显示末 4 位：
+
+```
+[ai] request count=1 size=1K ratio=3:4 image=312KB effect=no default=agnes-image-2.1-flash key=****ab12 fallback=agnes-image-2.5-flash
+[ai] default agnes-image-2.1-flash key=****ab12 status=429 fail 4.8s reason=上游接口错误（429）：error code: 1015（Retry-After: 262）
+[ai] fallback agnes-image-2.1-flash → agnes-image-2.5-flash
+[ai] fallback agnes-image-2.5-flash key=****ab12 status=200 ok 41.2s
+```
+
+两种查看方式（Pages Functions 的日志是实时流，不会持久保存，需要先开着再复现）：
+
+- Dashboard：Pages 项目 → **Deployments** → 点开某次部署 → **Functions** 标签 → **Begin log stream**
+- 命令行：`npx wrangler pages deployment tail --project-name perler-pattern-generator`（需先 `npx wrangler login`；加 `--environment preview` 看预览环境）
+
+接口响应里也带 `attempts` 数组（每次 provider 调用的 `provider / model / ok / status / reason / durationMs`），成功和失败都有，前端据此上报 PostHog 事件 `ai_provider_attempt`，可按 `provider` 维度统计成功率和失败原因。
+
 ### 注意事项
 
 - AI 生成约需 30–90 秒；若遇超时，检查 CF Workers 时长限制，必要时升级 Paid 计划

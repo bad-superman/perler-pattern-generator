@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, Redo2, RotateCcw, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
-import { generateAgnesImages, pickAgnesSize } from './agnes/client'
+import { AgnesGenerateError, generateAgnesImages, pickAgnesSize, type AgnesProviderAttempt } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { prepareReferenceImage } from './agnes/prepareReference'
 import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt, type AiFraming } from './agnes/styles'
@@ -802,7 +802,7 @@ function App() {
         setDebugPrompt(prompt)
         clearDebugAiImage()
       }
-      const { files: aiFiles, usedFallback, models: aiModels } = await generateAgnesImages({
+      const { files: aiFiles, usedFallback, models: aiModels, attempts: aiAttempts } = await generateAgnesImages({
         file: preparedFile,
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
@@ -815,6 +815,7 @@ function App() {
         effectFile,
         framing: aiFraming,
       })
+      trackProviderAttempts(aiAttempts, traits)
       if (usedFallback) {
         track('ai_generate_fallback_used', { ...traits, model: aiModels.find(Boolean) ?? '' })
         showAiNotice('默认模型暂不可用，本次已切换备用模型生成')
@@ -838,10 +839,36 @@ function App() {
       if (quantized) track('ai_generate_completed', { ...traits, duration_ms: durationMs, used_fallback: usedFallback })
       else track('ai_generate_failed', { ...traits, stage, duration_ms: durationMs })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
-      track('ai_generate_failed', { ...traits, stage, duration_ms: Math.round(performance.now() - startedAt) })
+      const message = cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试'
+      setError(message)
+      if (cause instanceof AgnesGenerateError) trackProviderAttempts(cause.attempts, traits)
+      track('ai_generate_failed', {
+        ...traits,
+        stage,
+        duration_ms: Math.round(performance.now() - startedAt),
+        reason: message.slice(0, 200),
+        http_status: cause instanceof AgnesGenerateError ? cause.status : 0,
+      })
     } finally {
       setIsAiGenerating(false)
+    }
+  }
+
+  /**
+   * One `ai_provider_attempt` event per server-side provider call, so PostHog can
+   * break down success rate and failure reasons by provider/model.
+   */
+  function trackProviderAttempts(attempts: AgnesProviderAttempt[], traits: Record<string, string | number | boolean>) {
+    for (const attempt of attempts) {
+      track('ai_provider_attempt', {
+        ...traits,
+        provider: attempt.provider,
+        model: attempt.model,
+        ok: attempt.ok,
+        http_status: attempt.status,
+        reason: attempt.reason.slice(0, 200),
+        duration_ms: attempt.durationMs,
+      })
     }
   }
 

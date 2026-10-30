@@ -2,7 +2,9 @@ import {
   AiConfigError,
   MAX_IMAGE_BYTES,
   describeAiConfig,
+  formatAttemptLog,
   generateImages,
+  maskKey,
   resolveAiConfig,
 } from '../../../server/ai/index.mjs'
 
@@ -41,8 +43,17 @@ async function blobToDataUri(blob) {
   return `data:${mimeType};base64,${bytesToBase64(bytes)}`
 }
 
-function logFallback({ reason, from, to }) {
-  console.warn(`[ai] fallback ${from} → ${to}：${reason}`)
+// Visible in Cloudflare: Pages project → Deployments → <deployment> → Functions →
+// "Begin log stream", or `wrangler pages deployment tail --project-name <name>`.
+const generateHooks = {
+  onAttempt(attempt, config) {
+    const line = formatAttemptLog(attempt, config)
+    if (attempt.ok) console.log(line)
+    else console.warn(line)
+  },
+  onFallback({ from, to }) {
+    console.warn(`[ai] fallback ${from} → ${to}`)
+  },
 }
 
 async function handlePost(context, aiConfig) {
@@ -72,7 +83,8 @@ async function handlePost(context, aiConfig) {
   }
 
   const request = { prompt, size, ratio, imageDataUri, effectImageDataUri }
-  const result = await generateImages(request, count, aiConfig, { onFallback: logFallback })
+  console.log(`[ai] request count=${count} size=${size} ratio=${ratio || '-'} image=${isUpload(image) ? `${Math.round(image.size / 1024)}KB` : 'none'} effect=${isUpload(effectImage) ? 'yes' : 'no'} default=${aiConfig.default.model} key=${maskKey(aiConfig.default.apiKey)} fallback=${aiConfig.fallback?.model ?? 'none'}`)
+  const result = await generateImages(request, count, aiConfig, generateHooks)
   return jsonResponse(200, result)
 }
 
@@ -119,9 +131,12 @@ export async function onRequest(context) {
     return await handlePost(context, aiConfig)
   } catch (cause) {
     if (cause instanceof AiConfigError) {
+      console.error(`[ai] config error: ${cause.message}`)
       return jsonResponse(500, { error: cause.message })
     }
     const message = cause instanceof Error ? cause.message : 'AI 生成失败'
-    return jsonResponse(502, { error: message })
+    const attempts = cause && typeof cause === 'object' && 'attempts' in cause ? cause.attempts : undefined
+    console.error(`[ai] request failed: ${message}`)
+    return jsonResponse(502, attempts ? { error: message, attempts } : { error: message })
   }
 }
