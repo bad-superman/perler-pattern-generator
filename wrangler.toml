@@ -1,3 +1,17 @@
 name = "perler-pattern-generator"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "dist"
+
+# Used when this branch is deployed as production.
+[[d1_databases]]
+binding = "GALLERY_DB"
+database_name = "perler-gallery-preview"
+database_id = "dcae3422-1c40-46bd-85bf-3d3bd4448b46"
+migrations_dir = "migrations"
+
+# Used by Cloudflare Preview deployments.
+[[env.preview.d1_databases]]
+binding = "GALLERY_DB"
+database_name = "perler-gallery-preview"
+database_id = "dcae3422-1c40-46bd-85bf-3d3bd4448b46"
+migrations_dir = "migrations"
