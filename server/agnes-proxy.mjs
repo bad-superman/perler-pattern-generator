@@ -2,6 +2,15 @@ import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  AiConfigError,
+  MAX_IMAGE_BYTES,
+  describeAiConfig,
+  formatAttemptLog,
+  generateImages,
+  maskKey,
+  resolveAiConfig,
+} from './ai/index.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const rootDir = resolve(__dirname, '..')
@@ -23,10 +32,16 @@ function loadEnvFile() {
 loadEnvFile()
 
 const PORT = Number(process.env.AGNES_PROXY_PORT ?? 8787)
-const API_KEY = process.env.AGNES_API_KEY ?? ''
-const API_BASE = process.env.AGNES_API_BASE ?? 'https://apihub.agnes-ai.com/v1/images/generations'
-const MODEL = process.env.AGNES_MODEL ?? 'agnes-image-2.1-flash'
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+// Resolve once at startup so misconfiguration fails fast with a clear message.
+let aiConfig
+try {
+  aiConfig = resolveAiConfig(process.env)
+} catch (cause) {
+  console.error(`[ai] 配置错误：${cause instanceof Error ? cause.message : String(cause)}`)
+  process.exit(1)
+}
+
 function sendJson(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -72,93 +87,40 @@ function fileToDataUri(filePart) {
   return `data:${mimeType};base64,${filePart.data.toString('base64')}`
 }
 
-async function callAgnes({ prompt, size, ratio, imageDataUri, effectImageDataUri }) {
-  const body = {
-    model: MODEL,
-    prompt,
-    size,
-    extra_body: {
-      response_format: 'b64_json',
-    },
-  }
-  if (ratio) body.ratio = ratio
-
-  const inputImages = [imageDataUri, effectImageDataUri].filter(Boolean)
-  if (inputImages.length > 0) {
-    body.extra_body.image = inputImages
-  } else {
-    body.return_base64 = true
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 360_000)
-
-  try {
-    const response = await fetch(API_BASE, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      const message = payload?.error?.message ?? payload?.message ?? `Agnes API 错误（${response.status}）`
-      throw new Error(message)
-    }
-
-    const imageBase64 = payload?.data?.[0]?.b64_json
-    const imageUrl = payload?.data?.[0]?.url
-    if (!imageBase64 && !imageUrl) throw new Error('Agnes API 未返回图片')
-
-    return {
-      imageBase64: imageBase64 ?? undefined,
-      imageUrl: imageUrl ?? undefined,
-      mimeType: 'image/png',
-    }
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri }) {
-  const total = Math.min(4, Math.max(1, Number(count) || 1))
-  const request = { prompt, size, ratio, imageDataUri, effectImageDataUri }
-  if (total === 1) {
-    const image = await callAgnes(request)
-    return { ...image, images: [image] }
-  }
-
-  const settled = await Promise.allSettled(Array.from({ length: total }, () => callAgnes(request)))
-  const images = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value)
-  if (!images.length) {
-    const reason = settled.find((item) => item.status === 'rejected')
-    throw reason?.reason instanceof Error ? reason.reason : new Error('AI 生成失败')
-  }
-  return { ...images[0], images }
+const generateHooks = {
+  onAttempt(attempt, config) {
+    const line = formatAttemptLog(attempt, config)
+    if (attempt.ok) console.log(line)
+    else console.warn(line)
+  },
+  onFallback({ from, to }) {
+    console.warn(`[ai] fallback ${from} → ${to}`)
+  },
 }
 
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     })
     res.end()
     return
   }
 
-  if (req.url !== '/api/agnes/generate' || req.method !== 'POST') {
+  if (req.url !== '/api/agnes/generate') {
     sendJson(res, 404, { error: 'Not found' })
     return
   }
 
-  if (!API_KEY) {
-    sendJson(res, 500, { error: '请先在 .env 中配置 AGNES_API_KEY' })
+  if (req.method === 'GET') {
+    sendJson(res, 200, { ok: true, route: '/api/agnes/generate', ...describeAiConfig(aiConfig) })
+    return
+  }
+
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { error: 'Method not allowed' })
     return
   }
 
@@ -198,16 +160,33 @@ const server = createServer(async (req, res) => {
       return
     }
 
-    const imageDataUri = imagePart ? fileToDataUri(imagePart) : undefined
-    const effectImageDataUri = effectImagePart ? fileToDataUri(effectImagePart) : undefined
-    const result = await callAgnesMany({ prompt, size, ratio, count, imageDataUri, effectImageDataUri })
+    const request = {
+      prompt,
+      size,
+      ratio,
+      imageDataUri: imagePart ? fileToDataUri(imagePart) : undefined,
+      effectImageDataUri: effectImagePart ? fileToDataUri(effectImagePart) : undefined,
+    }
+    console.log(`[ai] request count=${count} size=${size} ratio=${ratio || '-'} image=${imagePart ? `${Math.round(imagePart.data.length / 1024)}KB` : 'none'} effect=${effectImagePart ? 'yes' : 'no'}`)
+    const result = await generateImages(request, count, aiConfig, generateHooks)
     sendJson(res, 200, result)
   } catch (cause) {
+    if (cause instanceof AiConfigError) {
+      sendJson(res, 500, { error: cause.message })
+      return
+    }
     const message = cause instanceof Error ? cause.message : 'AI 生成失败'
-    sendJson(res, 502, { error: message })
+    const attempts = cause && typeof cause === 'object' && 'attempts' in cause ? cause.attempts : undefined
+    console.error(`[ai] request failed: ${message}`)
+    sendJson(res, 502, attempts ? { error: message, attempts } : { error: message })
   }
 })
 
 server.listen(PORT, '127.0.0.1', () => {
+  const summary = describeAiConfig(aiConfig)
   console.log(`Agnes proxy listening on http://127.0.0.1:${PORT}`)
+  console.log(`[ai] default: ${summary.default.kind} / ${summary.default.model} key=${maskKey(aiConfig.default.apiKey)}`)
+  console.log(summary.fallback && aiConfig.fallback
+    ? `[ai] fallback: ${summary.fallback.kind} / ${summary.fallback.model} key=${maskKey(aiConfig.fallback.apiKey)}`
+    : '[ai] fallback: 未配置（设置 AI_FALLBACK_MODEL 启用）')
 })

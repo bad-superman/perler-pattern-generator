@@ -26,7 +26,11 @@ npm run preview      # 本地预览生产构建
 
 - `AGNES_API_KEY` — Agnes API 密钥（必填，仅存在于服务端）
 - `AGNES_API_BASE` — 默认 `https://apihub.agnes-ai.com/v1/images/generations`
+- `AGNES_MODEL` — 默认模型，默认 `agnes-image-2.1-flash`
+- `AI_FALLBACK_MODEL` — 备用模型（如 `agnes-image-2.5-flash`）；设置后默认模型任何失败都会自动用备用模型重试一次，留空则不启用
 - `AGNES_PROXY_PORT` — 代理端口，默认 `8787`
+
+默认模型与备用模型都可以通过 `AI_DEFAULT_*` / `AI_FALLBACK_*` 独立配置 provider、Key、地址、模型和超时，详见 [`.env.example`](.env.example)。服务端代码在 [`server/ai/`](server/ai/)，本地代理与 Cloudflare Pages Function 共用。`GET /api/agnes/generate` 会返回当前生效的默认/备用模型（不含密钥），可用于排查配置。
 
 **本地转换** 模式行为不变：上传后直接在浏览器端量化，无需 API Key。
 
@@ -55,6 +59,10 @@ npm run preview      # 本地预览生产构建
 | `AGNES_API_KEY` | Encrypted | Agnes API 密钥 |
 | `AGNES_API_BASE` | Plaintext（可选） | 默认 `https://apihub.agnes-ai.com/v1/images/generations` |
 | `AGNES_MODEL` | Plaintext（可选） | 默认 `agnes-image-2.1-flash` |
+| `AI_FALLBACK_MODEL` | Plaintext（可选） | 备用模型，如 `agnes-image-2.5-flash`；默认模型失败时自动重试一次，留空不启用 |
+| `AI_DEFAULT_*` / `AI_FALLBACK_*` | 可选 | 按需独立配置 `PROVIDER`、`API_KEY`、`API_BASE`、`MODEL`、`TIMEOUT_MS`，见 `.env.example` |
+
+部署后访问 `GET /api/agnes/generate` 可确认两组模型是否按预期生效。
 
 ### 4. 部署与验证
 
@@ -71,6 +79,24 @@ npm run preview      # 本地预览生产构建
 cp .dev.vars.example .dev.vars   # 填入 AGNES_API_KEY
 npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Functions
 ```
+
+### 6. 查看 Functions 日志（排查 AI 调用问题）
+
+`/api/agnes/generate` 每次请求都会打结构化日志，key 只显示末 4 位：
+
+```
+[ai] request count=1 size=1K ratio=3:4 image=312KB effect=no default=agnes-image-2.1-flash key=****ab12 fallback=agnes-image-2.5-flash
+[ai] default agnes-image-2.1-flash key=****ab12 status=429 fail 4.8s reason=上游接口错误（429）：error code: 1015（Retry-After: 262）
+[ai] fallback agnes-image-2.1-flash → agnes-image-2.5-flash
+[ai] fallback agnes-image-2.5-flash key=****ab12 status=200 ok 41.2s
+```
+
+两种查看方式（Pages Functions 的日志是实时流，不会持久保存，需要先开着再复现）：
+
+- Dashboard：Pages 项目 → **Deployments** → 点开某次部署 → **Functions** 标签 → **Begin log stream**
+- 命令行：`npx wrangler pages deployment tail --project-name perler-pattern-generator`（需先 `npx wrangler login`；加 `--environment preview` 看预览环境）
+
+接口响应里也带 `attempts` 数组（每次 provider 调用的 `provider / model / ok / status / reason / durationMs`），成功和失败都有，前端据此上报 PostHog 事件 `ai_provider_attempt`，可按 `provider` 维度统计成功率和失败原因。
 
 ### 注意事项
 

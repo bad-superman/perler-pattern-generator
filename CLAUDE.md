@@ -44,14 +44,19 @@ The app is `src/App.tsx` plus CSS and small modules under `src/agnes/` and `src/
 
 **Responsive scaling**: a `ResizeObserver` + window `resize` listener recomputes `paperScale` so the full pattern fits the preview viewport without horizontal overflow (the verify scripts assert this fit/centering). Scale is applied via the `--paper-scale` CSS variable.
 
-**Export**: `exportPng` draws the pattern and legend directly on Canvas from in-memory `pattern`/`palette` state, then saves via `file-saver` (`toBlob`). Printing uses the native `window.print()`.
+**Mirror**: `mirrored` state in `App.tsx` derives `displayPattern = mirrorPatternHorizontal(pattern)` (`src/pattern/ops.ts`). Preview grids, `PatternZoomView`, and the export canvas read `displayPattern`; `PatternEditor` and bead counts always use the untouched `pattern`. The toggle is display-only, not persisted, and never enters undo history. `verify-mirror.mjs` asserts the flip end-to-end.
+
+**Export**: `exportPng` draws the pattern and legend directly on Canvas from in-memory `displayPattern`/`palette` state (subtitle gains "镜像" when mirrored), then saves via `file-saver` (`toBlob`). Printing uses the native `window.print()`.
 
 **State coupling**: control changes (grid size, max colors, shape, palette brand) call `regenerate`, which re-reads the last processed file from `lastSourceFileRef` (or the hidden upload input) and re-runs the full pipeline.
 
 **AI generation** (`src/agnes/`):
 - `styles.ts` — six perler-oriented prompt presets; prompts center the subject, simplify background, and target compact bead patterns
 - `cropSubject.ts` — trims AI output to non-background bounding box before quantization
-- `client.ts` — `generateAgnesImage()` posts multipart form data to `/api/agnes/generate`
-- `server/agnes-proxy.mjs` — local dev proxy to Agnes API with `AGNES_API_KEY`
-- `functions/api/agnes/generate.js` — Cloudflare Pages Function for production `/api/agnes/generate`
+- `client.ts` — `generateAgnesImages()` posts multipart form data to `/api/agnes/generate` and returns `{ files, usedFallback, providers, models, attempts }`; failures throw `AgnesGenerateError` carrying `attempts` too. The app shows a notice and tracks `ai_generate_fallback_used` when the fallback model produced the result, and emits one `ai_provider_attempt` PostHog event per server-side provider call (`provider`, `model`, `ok`, `http_status`, `reason`, `duration_ms`) so success rate and failure reasons can be broken down by provider
+- Server logging: both entry points log `[ai] …` lines per request and per attempt via `formatAttemptLog`, with API keys masked to the last 4 chars (`maskKey`). On Cloudflare these are visible only via the real-time Functions log stream / `wrangler pages deployment tail`
+- `server/ai/` — runtime-agnostic generation layer shared by both server entry points: `config.mjs` resolves `AI_DEFAULT_*` / `AI_FALLBACK_*` env (falling back to legacy `AGNES_*`), `providers/openaiImages.mjs` is the OpenAI-images-compatible adapter, `index.mjs` runs default → fallback per image with independent timeouts (`generateImages`). To add a vendor with a different protocol, add a `providers/<kind>.mjs` adapter and register its `kind` in `PROVIDER_KINDS` + `adapterFor`
+- `server/agnes-proxy.mjs` — local dev HTTP proxy; parses multipart and delegates to `server/ai`
+- `functions/api/agnes/generate.js` — Cloudflare Pages Function for production `/api/agnes/generate`; imports `server/ai` via relative path (wrangler bundles it). `GET` returns a secret-free summary of the default/fallback models
+- Fallback is enabled by setting `AI_FALLBACK_MODEL`; any failure of the default provider (HTTP error, timeout, empty payload) triggers one retry on the fallback. Responses carry `provider: 'default' | 'fallback'` and `model`
 - UI mode toggle: **本地转换** (immediate `generatePattern`) vs **AI 生成** (Agnes img2img → crop → `generatePattern` with `sharpQuantize` and recommended 48-grid default)

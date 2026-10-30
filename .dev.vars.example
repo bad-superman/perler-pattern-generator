@@ -1,3 +1,18 @@
+# 默认模型（兼容旧变量，未设置 AI_DEFAULT_* 时使用）
 AGNES_API_KEY=your_api_key_here
 AGNES_API_BASE=https://apihub.agnes-ai.com/v1/images/generations
 AGNES_MODEL=agnes-image-2.1-flash
+
+# 备用模型：设置即启用，其余 AI_FALLBACK_* 留空则继承默认模型配置
+AI_FALLBACK_MODEL=agnes-image-2.5-flash
+# AI_FALLBACK_PROVIDER=
+# AI_FALLBACK_API_KEY=
+# AI_FALLBACK_API_BASE=
+# AI_FALLBACK_TIMEOUT_MS=
+
+# 独立配置默认模型（可选，优先级高于 AGNES_*）
+# AI_DEFAULT_PROVIDER=openai-images
+# AI_DEFAULT_API_KEY=
+# AI_DEFAULT_API_BASE=
+# AI_DEFAULT_MODEL=
+# AI_DEFAULT_TIMEOUT_MS=150000

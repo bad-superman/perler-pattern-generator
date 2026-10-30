@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, Redo2, RotateCcw, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
-import { generateAgnesImages, pickAgnesSize } from './agnes/client'
+import { AgnesGenerateError, generateAgnesImages, pickAgnesSize, type AgnesProviderAttempt } from './agnes/client'
 import { cropSubjectFromImage } from './agnes/cropSubject'
 import { prepareReferenceImage } from './agnes/prepareReference'
 import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, DEFAULT_NEGATIVE_PROMPT, buildAgnesPrompt, type AiFraming } from './agnes/styles'
@@ -15,6 +15,7 @@ import {
   countCellsWithSymbol,
   createEmptyCell,
   ensurePaletteColor,
+  mirrorPatternHorizontal,
   recalculatePaletteCounts,
   replaceColorGlobally,
 } from './pattern/ops'
@@ -291,6 +292,7 @@ function buildPatternExportCanvas(
   gridRows: number,
   activeCells: number,
   maxSide: number,
+  mirrored = false,
 ) {
   const exportCell = getExportCellSize(gridCols, gridRows, maxSide)
   const gap = EXPORT_CELL_GAP
@@ -326,7 +328,8 @@ function buildPatternExportCanvas(
   ctx.fillText('拼豆图纸', margin, margin + 24)
   ctx.font = '400 14px "Noto Sans SC", sans-serif'
   ctx.fillStyle = '#6f647d'
-  ctx.fillText(`${gridCols}×${gridRows} · ${activeCells.toLocaleString()} 颗豆 · ${palette.length} 色`, margin, margin + 48)
+  const subtitle = `${gridCols}×${gridRows} · ${activeCells.toLocaleString()} 颗豆 · ${palette.length} 色${mirrored ? ' · 镜像' : ''}`
+  ctx.fillText(subtitle, margin, margin + 48)
 
   const gridX = margin + (contentW - gridW) / 2
   const gridY = headerH
@@ -429,6 +432,9 @@ function App() {
   const [renderMode, setRenderMode] = useState<RenderMode>(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 620px)').matches ? 'solid' : 'symbols'
   ))
+  // Mirror is a display-only transform: preview and export read `displayPattern`,
+  // while editing and bead counts keep working on the untouched `pattern`.
+  const [mirrored, setMirrored] = useState(false)
   const {
     pattern,
     palette,
@@ -471,6 +477,7 @@ function App() {
   const [isAiGenerating, setIsAiGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [exportNotice, setExportNotice] = useState('')
+  const [aiNotice, setAiNotice] = useState('')
   const [error, setError] = useState('')
   const [debugMode, setDebugMode] = useState(readDebugModeFromUrl)
   const [debugPrompt, setDebugPrompt] = useState('')
@@ -482,12 +489,14 @@ function App() {
   const effectReferenceRef = useRef<HTMLInputElement>(null)
   const lastSourceFileRef = useRef<File | null>(null)
   const exportNoticeTimerRef = useRef<number | null>(null)
+  const aiNoticeTimerRef = useRef<number | null>(null)
   const debugAiImageUrlRef = useRef('')
   const effectReferencePreviewRef = useRef('')
   const [paperScale, setPaperScale] = useState(1)
   const editSessionRef = useRef<{ startedAt: number; strokes: number; replaces: number; undos: number } | null>(null)
 
   const activeCells = useMemo(() => pattern.flat().filter((cell) => cell.colorIndex >= 0).length, [pattern])
+  const displayPattern = useMemo(() => (mirrored ? mirrorPatternHorizontal(pattern) : pattern), [pattern, mirrored])
   const cellSize = renderMode === 'symbols' ? 20 : 14
   const modeLabel = renderMode === 'symbols' ? '色号图纸' : '纯色预览'
   const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
@@ -793,7 +802,7 @@ function App() {
         setDebugPrompt(prompt)
         clearDebugAiImage()
       }
-      const aiFiles = await generateAgnesImages({
+      const { files: aiFiles, usedFallback, models: aiModels, attempts: aiAttempts } = await generateAgnesImages({
         file: preparedFile,
         styleId: aiStyleId,
         extraPrompt: aiPrompt,
@@ -806,6 +815,11 @@ function App() {
         effectFile,
         framing: aiFraming,
       })
+      trackProviderAttempts(aiAttempts, traits)
+      if (usedFallback) {
+        track('ai_generate_fallback_used', { ...traits, model: aiModels.find(Boolean) ?? '' })
+        showAiNotice('默认模型暂不可用，本次已切换备用模型生成')
+      }
       stage = 'quantize'
       setAiStage('正在量化成图纸…')
       const candidates = aiFiles.map((file) => ({ url: URL.createObjectURL(file), file }))
@@ -822,13 +836,39 @@ function App() {
         trigger: 'ai',
       })
       const durationMs = Math.round(performance.now() - startedAt)
-      if (quantized) track('ai_generate_completed', { ...traits, duration_ms: durationMs })
+      if (quantized) track('ai_generate_completed', { ...traits, duration_ms: durationMs, used_fallback: usedFallback })
       else track('ai_generate_failed', { ...traits, stage, duration_ms: durationMs })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试')
-      track('ai_generate_failed', { ...traits, stage, duration_ms: Math.round(performance.now() - startedAt) })
+      const message = cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试'
+      setError(message)
+      if (cause instanceof AgnesGenerateError) trackProviderAttempts(cause.attempts, traits)
+      track('ai_generate_failed', {
+        ...traits,
+        stage,
+        duration_ms: Math.round(performance.now() - startedAt),
+        reason: message.slice(0, 200),
+        http_status: cause instanceof AgnesGenerateError ? cause.status : 0,
+      })
     } finally {
       setIsAiGenerating(false)
+    }
+  }
+
+  /**
+   * One `ai_provider_attempt` event per server-side provider call, so PostHog can
+   * break down success rate and failure reasons by provider/model.
+   */
+  function trackProviderAttempts(attempts: AgnesProviderAttempt[], traits: Record<string, string | number | boolean>) {
+    for (const attempt of attempts) {
+      track('ai_provider_attempt', {
+        ...traits,
+        provider: attempt.provider,
+        model: attempt.model,
+        ok: attempt.ok,
+        http_status: attempt.status,
+        reason: attempt.reason.slice(0, 200),
+        duration_ms: attempt.durationMs,
+      })
     }
   }
 
@@ -991,6 +1031,7 @@ function App() {
     let outcome: 'downloaded' | 'share' | 'share_aborted' | 'share_sheet' | null = null
     const exportTraits = {
       render_mode: renderMode,
+      mirrored,
       color_count: palette.filter((color) => color.count > 0).length,
       cell_count: activeCells,
     }
@@ -1000,7 +1041,7 @@ function App() {
         .filter((color) => color.count > 0)
         .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
       const maxExportSide = isMobile ? 4096 : 8192
-      const canvas = limitExportCanvas(buildPatternExportCanvas(pattern, exportPalette, gridCols, gridRows, activeCells, maxExportSide), maxExportSide)
+      const canvas = limitExportCanvas(buildPatternExportCanvas(displayPattern, exportPalette, gridCols, gridRows, activeCells, maxExportSide, mirrored), maxExportSide)
       const blob = await canvasToBlob(canvas)
       const filename = `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`
       if (isMobile) {
@@ -1047,8 +1088,20 @@ function App() {
   }
 
   function printPattern() {
-    track('print_clicked', { render_mode: renderMode })
+    track('print_clicked', { render_mode: renderMode, mirrored })
     window.print()
+  }
+
+  function showAiNotice(message: string) {
+    setAiNotice(message)
+    if (aiNoticeTimerRef.current) window.clearTimeout(aiNoticeTimerRef.current)
+    aiNoticeTimerRef.current = window.setTimeout(() => setAiNotice(''), 6000)
+  }
+
+  function toggleMirror(next: boolean) {
+    if (next === mirrored) return
+    setMirrored(next)
+    track('mirror_toggled', { mirrored: next })
   }
 
   function downloadExportSheet() {
@@ -1056,6 +1109,7 @@ function App() {
     track('pattern_exported', {
       outcome: 'sheet_downloaded',
       render_mode: renderMode,
+      mirrored,
       color_count: palette.filter((color) => color.count > 0).length,
       cell_count: activeCells,
     })
@@ -1079,7 +1133,7 @@ function App() {
           ['--cell-font' as string]: '9px',
         }}
       >
-        {pattern.flat().map((cell, index) => (
+        {displayPattern.flat().map((cell, index) => (
           <span
             key={`${index}-${cell.symbol}`}
             style={{ background: cell.hex, color: cell.colorIndex >= 0 && isDarkHex(cell.hex) ? '#fff' : '#1d1a23' }}
@@ -1111,12 +1165,15 @@ function App() {
         onPickEffect={() => effectReferenceRef.current?.click()}
         onGenerate={() => void regenerate()}
         pattern={pattern}
+        displayPattern={displayPattern}
         palette={palette}
         gridCols={gridCols}
         gridRows={gridRows}
         activeCells={activeCells}
         renderMode={renderMode}
         setRenderMode={setRenderMode}
+        mirrored={mirrored}
+        setMirrored={toggleMirror}
         cellSize={cellSize}
         gridSize={gridSize}
         setGridSize={setGridSize}
@@ -1184,6 +1241,7 @@ function App() {
         closeExportSheet={() => { if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}
         downloadSheet={downloadExportSheet}
         error={error}
+        aiNotice={aiNotice}
         promoUrl={PROMO_AD_URL}
         promoImage={PROMO_AD_IMAGE}
         onPromoClick={() => track('promo_clicked', { placement: 'mobile_carousel' })}
@@ -1435,6 +1493,13 @@ function App() {
             <button className={renderMode === 'symbols' ? 'active' : ''} onClick={() => setRenderMode('symbols')} type="button">色号图纸</button>
             <button className={renderMode === 'solid' ? 'active' : ''} onClick={() => setRenderMode('solid')} type="button">纯色预览</button>
           </div>
+          <label className="mirror-row">
+            <input type="checkbox" checked={mirrored} disabled={!pattern.length} onChange={(event) => toggleMirror(event.target.checked)} />
+            <span>
+              <strong>镜像显示</strong>
+              <small>左右翻转预览与导出图</small>
+            </span>
+          </label>
 
           <div className="action-grid">
             {sourceMode === 'board' ? (
@@ -1544,6 +1609,10 @@ function App() {
                   )}
                 </>
               ) : (
+                <>
+                {mirrored && (
+                  <p className="mirror-edit-hint" role="note">编辑模式显示原图，镜像仅影响预览与导出。</p>
+                )}
                 <PatternEditor
                   pattern={pattern}
                   palette={palette}
@@ -1572,6 +1641,7 @@ function App() {
                   onReplaceToPaletteIndexChange={setReplaceToPaletteIndex}
                   onApplyColorReplace={handleApplyColorReplace}
                 />
+                </>
               )
             ) : (
               <div className="empty-state">
@@ -1622,7 +1692,7 @@ function App() {
             <strong>放大查看</strong>
             <button type="button" onClick={() => setZoomOpen(false)}>关闭</button>
           </header>
-          <PatternZoomView pattern={pattern} gridCols={gridCols} gridRows={gridRows} cellSize={cellSize} renderMode={renderMode} />
+          <PatternZoomView pattern={displayPattern} gridCols={gridCols} gridRows={gridRows} cellSize={cellSize} renderMode={renderMode} />
         </div>
       )}
 
@@ -1640,6 +1710,12 @@ function App() {
       {exportNotice && (
         <div className="export-toast" role="status" aria-live="polite">
           {exportNotice}
+        </div>
+      )}
+
+      {aiNotice && (
+        <div className="export-toast ai-notice" role="status" aria-live="polite">
+          {aiNotice}
         </div>
       )}
 

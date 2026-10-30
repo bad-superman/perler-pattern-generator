@@ -16,11 +16,64 @@ interface GenerateAgnesImageOptions {
   framing?: AiFraming
 }
 
+export type AgnesProviderRole = 'default' | 'fallback'
+
+/** One server-side call to one provider, as reported by `/api/agnes/generate`. */
+export interface AgnesProviderAttempt {
+  provider: AgnesProviderRole
+  model: string
+  ok: boolean
+  status: number
+  reason: string
+  durationMs: number
+}
+
 interface AgnesGenerateResponse {
   imageBase64?: string
   mimeType?: string
   imageUrl?: string
+  /** Which configured provider produced this image. Absent on older servers. */
+  provider?: AgnesProviderRole
+  model?: string
   images?: AgnesGenerateResponse[]
+  attempts?: AgnesProviderAttempt[]
+}
+
+export interface AgnesGenerationResult {
+  files: File[]
+  /** True when at least one image came from the fallback provider. */
+  usedFallback: boolean
+  providers: AgnesProviderRole[]
+  models: string[]
+  /** Every provider call the server made for this request, including failed ones. */
+  attempts: AgnesProviderAttempt[]
+}
+
+/** Thrown when the server responds with an error; carries the attempt log for analytics. */
+export class AgnesGenerateError extends Error {
+  attempts: AgnesProviderAttempt[]
+  status: number
+
+  constructor(message: string, status: number, attempts: AgnesProviderAttempt[] = []) {
+    super(message)
+    this.name = 'AgnesGenerateError'
+    this.status = status
+    this.attempts = attempts
+  }
+}
+
+function normalizeAttempts(value: unknown): AgnesProviderAttempt[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .map((item) => ({
+      provider: item.provider === 'fallback' ? 'fallback' : 'default',
+      model: typeof item.model === 'string' ? item.model : '',
+      ok: Boolean(item.ok),
+      status: typeof item.status === 'number' ? item.status : 0,
+      reason: typeof item.reason === 'string' ? item.reason : '',
+      durationMs: typeof item.durationMs === 'number' ? item.durationMs : 0,
+    }))
 }
 
 async function responseToFile(payload: AgnesGenerateResponse, styleId: string): Promise<File> {
@@ -41,7 +94,7 @@ async function responseToFile(payload: AgnesGenerateResponse, styleId: string): 
   throw new Error('AI 未返回有效图片')
 }
 
-export async function generateAgnesImages(options: GenerateAgnesImageOptions): Promise<File[]> {
+export async function generateAgnesImages(options: GenerateAgnesImageOptions): Promise<AgnesGenerationResult> {
   const prompt = options.prompt ?? buildAgnesPrompt({
     styleId: options.styleId,
     extraPrompt: options.extraPrompt,
@@ -77,20 +130,28 @@ export async function generateAgnesImages(options: GenerateAgnesImageOptions): P
   if (!response.ok) {
     if (!payload) {
       const snippet = raw.replace(/\s+/g, ' ').trim().slice(0, 160)
-      throw new Error(snippet
+      throw new AgnesGenerateError(snippet
         ? `AI 服务异常（${response.status}）：${snippet}`
-        : `AI 服务未就绪（${response.status}），请检查 Cloudflare Functions 与环境变量`)
+        : `AI 服务未就绪（${response.status}），请检查 Cloudflare Functions 与环境变量`, response.status)
     }
-    throw new Error(payload.error ?? `AI 生成失败（${response.status}）`)
+    throw new AgnesGenerateError(payload.error ?? `AI 生成失败（${response.status}）`, response.status, normalizeAttempts(payload.attempts))
   }
-  if (!payload) throw new Error('AI 返回数据无效')
+  if (!payload) throw new AgnesGenerateError('AI 返回数据无效', response.status)
 
   const images = payload.images?.length ? payload.images : [payload]
-  return Promise.all(images.map((image) => responseToFile(image, options.styleId)))
+  const files = await Promise.all(images.map((image) => responseToFile(image, options.styleId)))
+  const providers = images.map((image) => image.provider ?? 'default')
+  return {
+    files,
+    usedFallback: providers.includes('fallback'),
+    providers,
+    models: images.map((image) => image.model ?? ''),
+    attempts: normalizeAttempts(payload.attempts),
+  }
 }
 
 export async function generateAgnesImage(options: GenerateAgnesImageOptions): Promise<File> {
-  const [image] = await generateAgnesImages(options)
+  const { files: [image] } = await generateAgnesImages(options)
   return image
 }
 
