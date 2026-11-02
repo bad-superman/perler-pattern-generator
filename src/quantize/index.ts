@@ -1,8 +1,8 @@
 import type { BeadPaletteEntry } from '../palettes'
 import { deltaE76, rgbToLab } from './color'
 import { preparePalette, type PreparedColor } from './palette'
-import { assignPalette, cleanupIsolatedAssignments, clearConnectedBackground, type DitherMode } from './postprocess'
-import { drawImageToSampledGrid, fitGridToImage, type BoardShape } from './sample'
+import { assignPalette, cleanupIsolatedAssignments, clearConnectedBackground, mergeAdjacentNearColors, type DitherMode } from './postprocess'
+import { drawImageSmallGrid, drawImageToSampledGrid, fitGridToImage, SMALL_GRID_MAX_SIDE, type BoardShape } from './sample'
 import { selectPaletteColors, type LabSample } from './select'
 
 export type { BoardShape } from './sample'
@@ -50,7 +50,10 @@ function collectSamples(data: Uint8ClampedArray, cols: number, rows: number): La
 
 export function quantizeToPalette(image: HTMLImageElement, options: QuantizeOptions): QuantizedPattern {
   const { cols, rows } = fitGridToImage(image, options.gridSize, options.shape)
-  const imageData = drawImageToSampledGrid(image, cols, rows, options.shape, options.edgePriority ?? false)
+  const smallGrid = Math.max(cols, rows) <= SMALL_GRID_MAX_SIDE
+  const imageData = smallGrid
+    ? drawImageSmallGrid(image, cols, rows, options.shape)
+    : drawImageToSampledGrid(image, cols, rows, options.shape, options.edgePriority ?? false)
   if (options.removeBackground) clearConnectedBackground(imageData.data, cols, rows)
 
   const palette = preparePalette(options.palette)
@@ -58,5 +61,6 @@ export function quantizeToPalette(image: HTMLImageElement, options: QuantizeOpti
   const selected = selectPaletteColors(samples, palette, options.maxColors)
   const assignments = assignPalette(imageData.data, cols, rows, selected, options.dither ?? 'off')
   if (options.cleanupIsolated) cleanupIsolatedAssignments(assignments, cols, rows, selected)
+  if (smallGrid) mergeAdjacentNearColors(assignments, cols, rows, selected)
   return { cols, rows, selected, assignments }
 }

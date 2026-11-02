@@ -179,3 +179,63 @@ export function cleanupIsolatedAssignments(assigned: Int16Array, cols: number, r
     assigned.set(next)
   }
 }
+
+function chromaOf(color: PreparedColor) {
+  return Math.hypot(color.lab.a, color.lab.b)
+}
+
+export function mergeAdjacentNearColors(assigned: Int16Array, cols: number, rows: number, palette: readonly PreparedColor[]) {
+  const next = new Int16Array(assigned)
+  const neighbors = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ]
+  for (let round = 0; round < 8; round += 1) {
+    const counts = new Map<number, number>()
+    for (const index of assigned) {
+      if (index < 0) continue
+      counts.set(index, (counts.get(index) ?? 0) + 1)
+    }
+    next.set(assigned)
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < cols; x += 1) {
+        const index = y * cols + x
+        const current = assigned[index]
+        if (current < 0) continue
+        const votes = new Map<number, number>()
+        for (const [dx, dy] of neighbors) {
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue
+          const neighbor = assigned[ny * cols + nx]
+          if (neighbor < 0 || neighbor === current) continue
+          votes.set(neighbor, (votes.get(neighbor) ?? 0) + 1)
+        }
+        let winner = -1
+        let winnerCount = 0
+        let winnerDistance = Number.POSITIVE_INFINITY
+        for (const [color, count] of votes) {
+          const distance = deltaE76(palette[current].lab, palette[color].lab)
+          const larger = (counts.get(color) ?? 0) > (counts.get(current) ?? 0)
+          const nearDuplicate = distance <= 8 && count >= 1 && larger
+          const neutralEdge = chromaOf(palette[current]) < 12
+            && chromaOf(palette[color]) < 12
+            && distance <= 12
+            && count >= 1
+            && larger
+          const adjacent = round < 2 && distance <= 12 && count >= 2 && (chromaOf(palette[current]) >= 12 || larger)
+          if (!nearDuplicate && !neutralEdge && !adjacent) continue
+          if (count > winnerCount || (count === winnerCount && distance < winnerDistance)) {
+            winner = color
+            winnerCount = count
+            winnerDistance = distance
+          }
+        }
+        if (winner >= 0) next[index] = winner
+      }
+    }
+    assigned.set(next)
+  }
+}
