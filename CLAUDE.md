@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A fully client-side React app that turns an uploaded image into a printable perler-bead (拼豆) pattern. Image quantization runs in the browser via the Canvas API. An optional **AI generation** mode calls Agnes Image 2.1 Flash through a small Node proxy (`server/agnes-proxy.mjs`) to stylize the reference image before the same quantization pipeline runs.
+A fully client-side React app that turns an uploaded image into a printable perler-bead (拼豆) pattern. Image quantization runs in the browser via the Canvas API. An optional **AI generation** mode defaults to gpt-5.6-sol through ModelMux's Responses-compatible endpoint and uses the `image_generation` tool to stylize the reference image before the same quantization pipeline runs.
 
 ## Commands
 
@@ -55,7 +55,7 @@ The app is `src/App.tsx` plus CSS and small modules under `src/agnes/` and `src/
 - `cropSubject.ts` — trims AI output to non-background bounding box before quantization
 - `client.ts` — `generateAgnesImages()` posts multipart form data to `/api/agnes/generate` and returns `{ files, usedFallback, providers, models, attempts }`; failures throw `AgnesGenerateError` carrying `attempts` too. The app shows a notice and tracks `ai_generate_fallback_used` when the fallback model produced the result, and emits one `ai_provider_attempt` PostHog event per server-side provider call (`provider`, `model`, `ok`, `http_status`, `reason`, `duration_ms`) so success rate and failure reasons can be broken down by provider
 - Server logging: both entry points log `[ai] …` lines per request and per attempt via `formatAttemptLog`, with API keys masked to the last 4 chars (`maskKey`). On Cloudflare these are visible only via the real-time Functions log stream / `wrangler pages deployment tail`
-- `server/ai/` — runtime-agnostic generation layer shared by both server entry points: `config.mjs` resolves `AI_DEFAULT_*` / `AI_FALLBACK_*` env (falling back to legacy `AGNES_*`), `providers/openaiImages.mjs` is the OpenAI-images-compatible adapter, `index.mjs` runs default → fallback per image with independent timeouts (`generateImages`). To add a vendor with a different protocol, add a `providers/<kind>.mjs` adapter and register its `kind` in `PROVIDER_KINDS` + `adapterFor`
+- `server/ai/` — runtime-agnostic generation layer shared by both server entry points: `config.mjs` uses independent `AI_DEFAULT_*` / `AI_FALLBACK_*` variables and defaults to the ModelMux Responses endpoint with gpt-5.6-sol. `providers/openaiResponses.mjs` handles Responses `image_generation`; `providers/openaiImages.mjs` retains the Images-compatible path. `index.mjs` runs default → fallback per image with independent timeouts (`generateImages`).
 - `server/agnes-proxy.mjs` — local dev HTTP proxy; parses multipart and delegates to `server/ai`
 - `functions/api/agnes/generate.js` — Cloudflare Pages Function for production `/api/agnes/generate`; imports `server/ai` via relative path (wrangler bundles it). `GET` returns a secret-free summary of the default/fallback models
 - Fallback is enabled by setting `AI_FALLBACK_MODEL`; any failure of the default provider (HTTP error, timeout, empty payload) triggers one retry on the fallback. Responses carry `provider: 'default' | 'fallback'` and `model`

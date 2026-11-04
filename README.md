@@ -1,13 +1,13 @@
 # 拼豆图纸生成器 (Perler Pattern Generator)
 
-一个 React 应用，可将上传的图片转换为可打印的拼豆图纸。图像量化在浏览器端通过 Canvas API 完成，默认输出 **MARD 221 国产色号**（如 `A01`、`B12`），侧栏可切换 **Hama** 色卡；HEX 为社区近似值，购料请以实物编号为准。 **AI 生成** 模式通过 Agnes API 代理（本地 Node 或 Cloudflare Pages Function）调用大模型。
+一个 React 应用，可将上传的图片转换为可打印的拼豆图纸。图像量化在浏览器端通过 Canvas API 完成，默认输出 **MARD 221 国产色号**（如 `A01`、`B12`），侧栏可切换 **Hama** 色卡；HEX 为社区近似值，购料请以实物编号为准。 **AI 生成** 模式通过服务端代理（本地 Node 或 Cloudflare Pages Function）调用大模型。
 
 ## 本地开发
 
 ```bash
 npm install          # 安装依赖
-cp .env.example .env # 配置 Agnes API Key（AI 生成功能需要）
-npm run dev:proxy    # 终端 1：启动 Agnes API 代理（默认 8787 端口）
+cp .env.example .env # 配置 AI_DEFAULT_API_KEY（AI 生成功能需要）
+npm run dev:proxy    # 终端 1：启动 AI API 代理（默认 8787 端口）
 npm run dev          # 终端 2：启动开发服务器（默认 http://127.0.0.1:5173）
 npm run lint         # 运行 ESLint
 npm run build        # 类型检查（tsc -b）并构建生产产物到 dist/
@@ -19,14 +19,15 @@ npm run preview      # 本地预览生产构建
 侧栏切换到 **AI 生成** 模式，上传参考图并选择风格，点击「AI 生成拼豆图」。流程为：
 
 1. 前端调用本地代理 `/api/agnes/generate`
-2. 代理转发至 [Agnes Image 2.1 Flash](https://agnes-ai.com/doc/agnes-image-21-flash) 做图生图
+2. 代理默认通过 ModelMux `/v1/responses` 调用 `gpt-5.6-sol` 的 `image_generation` 工具做图生图
 3. 返回的图片再走现有 Canvas 量化流程，输出可打印拼豆图纸
 
 环境变量见 [`.env.example`](.env.example)：
 
-- `AGNES_API_KEY` — Agnes API 密钥（必填，仅存在于服务端）
-- `AGNES_API_BASE` — 默认 `https://apihub.agnes-ai.com/v1/images/generations`
-- `AGNES_MODEL` — 默认模型，默认 `agnes-image-2.1-flash`
+- `AI_DEFAULT_API_KEY` — 默认模型 API 密钥（必填，仅存在于服务端）
+- `AI_DEFAULT_PROVIDER` — 默认 `openai-responses`
+- `AI_DEFAULT_API_BASE` — 默认 `https://modelmux.io/v1`
+- `AI_DEFAULT_MODEL` — 默认 `gpt-5.6-sol`
 - `AI_FALLBACK_MODEL` — 备用模型（如 `agnes-image-2.5-flash`）；设置后默认模型任何失败都会自动用备用模型重试一次，留空则不启用
 - `AGNES_PROXY_PORT` — 代理端口，默认 `8787`
 
@@ -56,9 +57,7 @@ npm run preview      # 本地预览生产构建
 
 | 变量名 | 类型 | 说明 |
 |---|---|---|
-| `AGNES_API_KEY` | Encrypted | Agnes API 密钥 |
-| `AGNES_API_BASE` | Plaintext（可选） | 默认 `https://apihub.agnes-ai.com/v1/images/generations` |
-| `AGNES_MODEL` | Plaintext（可选） | 默认 `agnes-image-2.1-flash` |
+| `AI_DEFAULT_API_KEY` | Encrypted | 默认模型 API 密钥（必填） |
 | `AI_FALLBACK_MODEL` | Plaintext（可选） | 备用模型，如 `agnes-image-2.5-flash`；默认模型失败时自动重试一次，留空不启用 |
 | `AI_DEFAULT_*` / `AI_FALLBACK_*` | 可选 | 按需独立配置 `PROVIDER`、`API_KEY`、`API_BASE`、`MODEL`、`TIMEOUT_MS`，见 `.env.example` |
 | `ADMIN_GALLERY_TOKEN` | Encrypted | 图库审核口令，配在 Pages 的 Preview 环境。后台地址是 `/admin` |
@@ -79,7 +78,7 @@ Preview 环境的图库数据库是 D1 `perler-gallery-preview`，绑定名 `GAL
 ### 5. 本地模拟 Pages 生产环境
 
 ```bash
-cp .dev.vars.example .dev.vars   # 填入 AGNES_API_KEY
+cp .dev.vars.example .dev.vars   # 填入 AI_DEFAULT_API_KEY
 npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Functions
 ```
 
@@ -88,10 +87,8 @@ npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Funct
 `/api/agnes/generate` 每次请求都会打结构化日志，key 只显示末 4 位：
 
 ```
-[ai] request count=1 size=1K ratio=3:4 image=312KB effect=no default=agnes-image-2.1-flash key=****ab12 fallback=agnes-image-2.5-flash
-[ai] default agnes-image-2.1-flash key=****ab12 status=429 fail 4.8s reason=上游接口错误（429）：error code: 1015（Retry-After: 262）
-[ai] fallback agnes-image-2.1-flash → agnes-image-2.5-flash
-[ai] fallback agnes-image-2.5-flash key=****ab12 status=200 ok 41.2s
+[ai] request count=1 size=1K ratio=3:4 image=312KB effect=no default=gpt-5.6-sol key=****ab12 fallback=none
+[ai] default gpt-5.6-sol key=****ab12 status=200 ok 28.4s
 ```
 
 两种查看方式（Pages Functions 的日志是实时流，不会持久保存，需要先开着再复现）：
@@ -104,7 +101,7 @@ npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Funct
 ### 注意事项
 
 - AI 生成约需 30–90 秒；若遇超时，检查 CF Workers 时长限制，必要时升级 Paid 计划
-- 只需 **本地转换** 时，可不配置 `AGNES_API_KEY`，AI 模式会报错但不影响本地模式
+- 只需 **本地转换** 时，可不配置 `AI_DEFAULT_API_KEY`，AI 模式会报错但不影响本地模式
 
 ## 部署（使用 Nginx）
 

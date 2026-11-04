@@ -7,7 +7,7 @@
 /**
  * Protocols the server knows how to talk. Add a new entry here and a matching
  * adapter under `providers/` to support another vendor.
- * @typedef {'openai-images'} ProviderKind
+ * @typedef {'openai-responses' | 'openai-images'} ProviderKind
  */
 
 /**
