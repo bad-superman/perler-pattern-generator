@@ -15,3 +15,9 @@ binding = "GALLERY_DB"
 database_name = "perler-gallery-preview"
 database_id = "dcae3422-1c40-46bd-85bf-3d3bd4448b46"
 migrations_dir = "migrations"
+
+[env.preview.vars]
+AI_DEFAULT_PROVIDER = "openai-responses"
+AI_DEFAULT_API_BASE = "https://modelmux.io/v1"
+AI_DEFAULT_MODEL = "gpt-5.6-sol"
+AI_DEFAULT_TIMEOUT_MS = "150000"

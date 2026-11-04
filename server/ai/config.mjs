@@ -1,12 +1,12 @@
 import { AiConfigError } from './types.mjs'
 
-export const DEFAULT_API_BASE = 'https://apihub.agnes-ai.com/v1/images/generations'
-export const DEFAULT_MODEL = 'agnes-image-2.1-flash'
-export const DEFAULT_PROVIDER_KIND = 'openai-images'
+export const DEFAULT_API_BASE = 'https://modelmux.io/v1'
+export const DEFAULT_MODEL = 'gpt-5.6-sol'
+export const DEFAULT_PROVIDER_KIND = 'openai-responses'
 export const DEFAULT_TIMEOUT_MS = 150_000
 
 /** @type {ReadonlyArray<import('./types.mjs').ProviderKind>} */
-export const PROVIDER_KINDS = ['openai-images']
+export const PROVIDER_KINDS = ['openai-responses', 'openai-images']
 
 /**
  * @param {Record<string, string | undefined>} env
@@ -47,9 +47,9 @@ function parseKind(raw, key) {
 /**
  * Resolve default + fallback provider configuration from environment variables.
  *
- * Precedence for the default model: `AI_DEFAULT_*` → legacy `AGNES_*` → built-in
- * defaults. The fallback is enabled only when `AI_FALLBACK_MODEL` is set; its
- * other fields inherit from the default model when left empty.
+ * Default and fallback providers use independent AI_DEFAULT_* / AI_FALLBACK_*
+ * variables. The fallback is enabled only when AI_FALLBACK_MODEL is set; its
+ * other fields inherit from the default provider when left empty.
  *
  * @param {Record<string, string | undefined>} env
  * @returns {import('./types.mjs').AiConfig}
@@ -57,14 +57,14 @@ function parseKind(raw, key) {
 export function resolveAiConfig(env) {
   const defaultConfig = {
     kind: parseKind(readString(env, 'AI_DEFAULT_PROVIDER'), 'AI_DEFAULT_PROVIDER') ?? DEFAULT_PROVIDER_KIND,
-    apiKey: readString(env, 'AI_DEFAULT_API_KEY') || readString(env, 'AGNES_API_KEY'),
-    apiBase: readString(env, 'AI_DEFAULT_API_BASE') || readString(env, 'AGNES_API_BASE') || DEFAULT_API_BASE,
-    model: readString(env, 'AI_DEFAULT_MODEL') || readString(env, 'AGNES_MODEL') || DEFAULT_MODEL,
+    apiKey: readString(env, 'AI_DEFAULT_API_KEY'),
+    apiBase: readString(env, 'AI_DEFAULT_API_BASE') || DEFAULT_API_BASE,
+    model: readString(env, 'AI_DEFAULT_MODEL') || DEFAULT_MODEL,
     timeoutMs: parseTimeout(readString(env, 'AI_DEFAULT_TIMEOUT_MS'), 'AI_DEFAULT_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS,
   }
 
   if (!defaultConfig.apiKey) {
-    throw new AiConfigError('请先配置 AI_DEFAULT_API_KEY（或兼容的 AGNES_API_KEY）')
+    throw new AiConfigError('请先配置 AI_DEFAULT_API_KEY')
   }
 
   const fallbackModel = readString(env, 'AI_FALLBACK_MODEL')

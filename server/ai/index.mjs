@@ -1,5 +1,6 @@
 import { ProviderError, maskKey } from './types.mjs'
 import * as openaiImages from './providers/openaiImages.mjs'
+import * as openaiResponses from './providers/openaiResponses.mjs'
 
 export { resolveAiConfig, describeAiConfig } from './config.mjs'
 export { ProviderError, AiConfigError, maskKey } from './types.mjs'
@@ -13,6 +14,8 @@ export const MAX_CANDIDATES = 4
  */
 function adapterFor(kind) {
   switch (kind) {
+    case 'openai-responses':
+      return openaiResponses.generate
     case 'openai-images':
       return openaiImages.generate
     default:
