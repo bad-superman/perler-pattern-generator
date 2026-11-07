@@ -4,8 +4,8 @@ import { createPass, publicPass } from '../../../server/access/service.mjs'
 
 export async function onRequest(context) {
   try {
-    requireAdmin(context.request, context.env.ADMIN_TOKEN)
-    const store = createAccessD1Store(requirePaidDb(context.env))
+    requireAdmin(context.request, context.env.ADMIN_TOKEN || context.env.ADMIN_GALLERY_TOKEN)
+    const store = createAccessD1Store(await requirePaidDb(context.env, context.request))
     if (context.request.method === 'GET') {
       return json(200, { items: (await store.listPasses()).map((pass) => publicPass(pass)) })
     }

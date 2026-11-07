@@ -21,8 +21,8 @@ export async function onRequestPost(context) {
   let reservation
   let store
   try {
-    if (resolveSiteMode(context.env) !== 'pro') return json(404, { error: '接口不存在' })
-    store = createAccessD1Store(requirePaidDb(context.env))
+    if (resolveSiteMode(context.env, context.request) !== 'pro') return json(404, { error: '接口不存在' })
+    store = createAccessD1Store(await requirePaidDb(context.env, context.request))
     reservation = await beginGeneration(
       store,
       readBearerToken(context.request),

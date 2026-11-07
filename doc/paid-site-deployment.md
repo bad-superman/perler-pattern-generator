@@ -43,6 +43,8 @@ ADMIN_TOKEN
 
 `PAID_DB` 必须绑定独立 D1 数据库。不要让免费站绑定生产付费库。
 
+功能分支 `codex/paid-access` 的 Cloudflare Git Preview 有一项受主机名严格限制的兼容逻辑：在该 Preview 尚未配置 `PAID_DB` 时，临时使用 Preview `GALLERY_DB` 并以 `CREATE TABLE IF NOT EXISTS` 初始化付费表。该逻辑不会在其他 Preview、正式免费站或正式付费站启用；正式付费站仍必须配置独立 `PAID_DB`。
+
 ## 创建和迁移付费数据库
 
 先在 Cloudflare 创建付费 D1 数据库，然后执行独立迁移目录：

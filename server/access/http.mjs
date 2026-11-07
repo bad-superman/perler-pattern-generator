@@ -1,4 +1,5 @@
 import { AccessError } from './errors.mjs'
+import { ensureAccessSchema, isPaidFeaturePreview } from './schema.mjs'
 
 export function json(status, payload) {
   return new Response(JSON.stringify(payload), {
@@ -23,7 +24,11 @@ export function requireAdmin(request, adminToken) {
   if (diff !== 0) throw new AccessError('ADMIN_UNAUTHORIZED', '需要管理员身份', 401)
 }
 
-export function requirePaidDb(env) {
-  if (!env?.PAID_DB) throw new AccessError('PAID_DB_NOT_CONFIGURED', '付费数据库未配置', 503)
-  return env.PAID_DB
+export async function requirePaidDb(env, request) {
+  if (env?.PAID_DB) return env.PAID_DB
+  if (env?.GALLERY_DB && isPaidFeaturePreview(request)) {
+    await ensureAccessSchema(env.GALLERY_DB)
+    return env.GALLERY_DB
+  }
+  throw new AccessError('PAID_DB_NOT_CONFIGURED', '付费数据库未配置', 503)
 }

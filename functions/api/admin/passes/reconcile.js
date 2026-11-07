@@ -4,8 +4,8 @@ import { reconcileStaleReservations } from '../../../../server/access/service.mj
 
 export async function onRequestPost(context) {
   try {
-    requireAdmin(context.request, context.env.ADMIN_TOKEN)
-    const result = await reconcileStaleReservations(createAccessD1Store(requirePaidDb(context.env)))
+    requireAdmin(context.request, context.env.ADMIN_TOKEN || context.env.ADMIN_GALLERY_TOKEN)
+    const result = await reconcileStaleReservations(createAccessD1Store(await requirePaidDb(context.env, context.request)))
     return json(200, result)
   } catch (error) {
     return errorResponse(error)

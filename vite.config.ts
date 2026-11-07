@@ -65,7 +65,9 @@ function galleryDevApi(adminToken: string): Plugin {
 }
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const siteMode = env.VITE_SITE_MODE || (process.env.CF_PAGES_BRANCH === 'codex/paid-access' ? 'pro' : 'free')
   return {
+    define: { 'import.meta.env.VITE_SITE_MODE': JSON.stringify(siteMode) },
     plugins: [react(), claritySnippet(env.VITE_CLARITY_PROJECT_ID), galleryDevApi(env.ADMIN_GALLERY_TOKEN || 'dev-gallery-admin')],
     server: {
       proxy: {

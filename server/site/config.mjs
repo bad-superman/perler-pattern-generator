@@ -1,3 +1,5 @@
-export function resolveSiteMode(env = {}) {
-  return env.SITE_MODE === 'pro' ? 'pro' : 'free'
+import { isPaidFeaturePreview } from '../access/schema.mjs'
+
+export function resolveSiteMode(env = {}, request) {
+  return env.SITE_MODE === 'pro' || (request && isPaidFeaturePreview(request)) ? 'pro' : 'free'
 }

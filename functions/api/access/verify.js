@@ -5,7 +5,7 @@ import { verifyToken } from '../../../server/access/service.mjs'
 export async function onRequestPost(context) {
   try {
     const body = await context.request.json().catch(() => ({}))
-    const pass = await verifyToken(createAccessD1Store(requirePaidDb(context.env)), body.token)
+    const pass = await verifyToken(createAccessD1Store(await requirePaidDb(context.env, context.request)), body.token)
     return json(200, { valid: true, pass })
   } catch (error) {
     return errorResponse(error)

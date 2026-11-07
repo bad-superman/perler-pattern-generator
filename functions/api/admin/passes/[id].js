@@ -5,8 +5,8 @@ import { adjustPassCredits, publicPass } from '../../../../server/access/service
 
 export async function onRequest(context) {
   try {
-    requireAdmin(context.request, context.env.ADMIN_TOKEN)
-    const store = createAccessD1Store(requirePaidDb(context.env))
+    requireAdmin(context.request, context.env.ADMIN_TOKEN || context.env.ADMIN_GALLERY_TOKEN)
+    const store = createAccessD1Store(await requirePaidDb(context.env, context.request))
     const passId = context.params.id
     if (context.request.method === 'GET') {
       const pass = await store.findPassById(passId)
