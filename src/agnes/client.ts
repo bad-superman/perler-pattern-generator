@@ -1,4 +1,6 @@
 import { buildAgnesPrompt, type AiFraming } from './styles'
+import { IS_PRO_SITE } from '../config/site'
+import type { AccessPassSummary } from '../access/client'
 
 interface GenerateAgnesImageOptions {
   file?: File
@@ -14,6 +16,8 @@ interface GenerateAgnesImageOptions {
   negativePrompt?: string
   hasEffectReference?: boolean
   framing?: AiFraming
+  accessToken?: string
+  requestId?: string
 }
 
 export type AgnesProviderRole = 'default' | 'fallback'
@@ -37,6 +41,9 @@ interface AgnesGenerateResponse {
   model?: string
   images?: AgnesGenerateResponse[]
   attempts?: AgnesProviderAttempt[]
+  pass?: AccessPassSummary
+  remainingCredits?: number
+  code?: string
 }
 
 export interface AgnesGenerationResult {
@@ -47,6 +54,7 @@ export interface AgnesGenerationResult {
   models: string[]
   /** Every provider call the server made for this request, including failed ones. */
   attempts: AgnesProviderAttempt[]
+  pass?: AccessPassSummary
 }
 
 /** Thrown when the server responds with an error; carries the attempt log for analytics. */
@@ -113,8 +121,14 @@ export async function generateAgnesImages(options: GenerateAgnesImageOptions): P
   if (options.file) form.append('image', options.file)
   if (options.effectFile) form.append('effectImage', options.effectFile)
 
-  const response = await fetch('/api/agnes/generate', {
+  const headers: Record<string, string> = {}
+  if (IS_PRO_SITE && options.accessToken) {
+    headers.Authorization = `Bearer ${options.accessToken}`
+    headers['Idempotency-Key'] = options.requestId || crypto.randomUUID()
+  }
+  const response = await fetch(IS_PRO_SITE ? '/api/pro/generate' : '/api/agnes/generate', {
     method: 'POST',
+    headers,
     body: form,
     signal: AbortSignal.timeout(360_000),
   })
@@ -147,6 +161,7 @@ export async function generateAgnesImages(options: GenerateAgnesImageOptions): P
     providers,
     models: images.map((image) => image.model ?? ''),
     attempts: normalizeAttempts(payload.attempts),
+    pass: payload.pass,
   }
 }
 

@@ -1804,3 +1804,67 @@ h1 {
   padding: 6px 10px;
   font-size: 12px;
 }
+.access-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f7f4ff;
+}
+
+.access-gate section {
+  width: min(520px, 100%);
+  padding: 40px;
+  border-radius: 24px;
+  background: white;
+  box-shadow: 0 16px 48px rgba(63, 39, 112, 0.12);
+  text-align: center;
+}
+
+.access-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #5f36b3;
+  background: #eee7ff;
+  font-weight: 700;
+}
+
+.access-muted { color: #756f80; font-size: 14px; }
+
+.paid-credit-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 auto 16px;
+  padding: 12px 18px;
+  border: 1px solid #d9caff;
+  border-radius: 14px;
+  color: #4f2a96;
+  background: #f5f0ff;
+}
+
+.access-create-form { flex-wrap: wrap; }
+.access-created { display: flex; gap: 8px; margin: 12px 0; }
+.access-created input { flex: 1; min-width: 0; }
+.access-id { display: block; color: #888; font-size: 11px; }
+
+.mobile-paid-credit {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+
+.access-detail {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  background: white;
+}
+
+.access-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.access-detail ul { max-height: 220px; overflow: auto; padding-left: 20px; color: #555; }

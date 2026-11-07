@@ -140,6 +140,8 @@ function PromoCarousel({ promoUrl, promoImage, onPromoClick }: { promoUrl: strin
 
   useEffect(() => {
     if (phase !== 'reset') return undefined
+    // The reset phase is driven by the preceding animation timer.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIndex((current) => (current + 1) % slides.length)
     const frame = window.requestAnimationFrame(() => setPhase('idle'))
     return () => window.cancelAnimationFrame(frame)

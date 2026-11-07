@@ -1,12 +1,11 @@
 import {
   AiConfigError,
-  MAX_IMAGE_BYTES,
   describeAiConfig,
   formatAttemptLog,
-  generateImages,
   maskKey,
   resolveAiConfig,
 } from '../../../server/ai/index.mjs'
+import { executeGenerateRequest } from '../../../server/ai/http.mjs'
 
 function jsonResponse(status, payload) {
   return new Response(JSON.stringify(payload), {
@@ -16,31 +15,6 @@ function jsonResponse(status, payload) {
       'Cache-Control': 'no-store',
     },
   })
-}
-
-function bytesToBase64(bytes) {
-  let binary = ''
-  const chunkSize = 0x400
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(index, index + chunkSize))
-  }
-  return btoa(binary)
-}
-
-function isUpload(value) {
-  return Boolean(
-    value
-    && typeof value === 'object'
-    && typeof value.arrayBuffer === 'function'
-    && typeof value.size === 'number'
-    && value.size > 0,
-  )
-}
-
-async function blobToDataUri(blob) {
-  const mimeType = blob.type?.startsWith('image/') ? blob.type : 'image/png'
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  return `data:${mimeType};base64,${bytesToBase64(bytes)}`
 }
 
 // Visible in Cloudflare: Pages project → Deployments → <deployment> → Functions →
@@ -57,34 +31,8 @@ const generateHooks = {
 }
 
 async function handlePost(context, aiConfig) {
-  const formData = await context.request.formData()
-  const prompt = String(formData.get('prompt') ?? '').trim()
-  const size = String(formData.get('size') ?? '1K').trim() || '1K'
-  const ratio = String(formData.get('ratio') ?? '').trim()
-  const count = Number(formData.get('count') ?? '1')
-  const image = formData.get('image')
-  const effectImage = formData.get('effectImage')
-
-  if (!prompt) return jsonResponse(400, { error: '缺少 prompt 参数' })
-
-  let imageDataUri
-  let effectImageDataUri
-  if (isUpload(image)) {
-    if (image.size > MAX_IMAGE_BYTES) {
-      return jsonResponse(400, { error: '图片过大，请上传 8MB 以内的图片' })
-    }
-    imageDataUri = await blobToDataUri(image)
-  }
-  if (isUpload(effectImage)) {
-    if (effectImage.size > MAX_IMAGE_BYTES) {
-      return jsonResponse(400, { error: '效果参考图过大，请上传 8MB 以内的图片' })
-    }
-    effectImageDataUri = await blobToDataUri(effectImage)
-  }
-
-  const request = { prompt, size, ratio, imageDataUri, effectImageDataUri }
-  console.log(`[ai] request count=${count} size=${size} ratio=${ratio || '-'} image=${isUpload(image) ? `${Math.round(image.size / 1024)}KB` : 'none'} effect=${isUpload(effectImage) ? 'yes' : 'no'} default=${aiConfig.default.model} key=${maskKey(aiConfig.default.apiKey)} fallback=${aiConfig.fallback?.model ?? 'none'}`)
-  const result = await generateImages(request, count, aiConfig, generateHooks)
+  const { result, meta } = await executeGenerateRequest(context.request, aiConfig, generateHooks)
+  console.log(`[ai] request count=${meta.count} size=${meta.size} ratio=${meta.ratio || '-'} image=${meta.imageSize ? `${Math.round(meta.imageSize / 1024)}KB` : 'none'} effect=${meta.hasEffectImage ? 'yes' : 'no'} default=${aiConfig.default.model} key=${maskKey(aiConfig.default.apiKey)} fallback=${aiConfig.fallback?.model ?? 'none'}`)
   return jsonResponse(200, result)
 }
 
@@ -135,8 +83,9 @@ export async function onRequest(context) {
       return jsonResponse(500, { error: cause.message })
     }
     const message = cause instanceof Error ? cause.message : 'AI 生成失败'
+    const status = Number(cause?.status) || 502
     const attempts = cause && typeof cause === 'object' && 'attempts' in cause ? cause.attempts : undefined
     console.error(`[ai] request failed: ${message}`)
-    return jsonResponse(502, attempts ? { error: message, attempts } : { error: message })
+    return jsonResponse(status, attempts ? { error: message, attempts } : { error: message })
   }
 }
