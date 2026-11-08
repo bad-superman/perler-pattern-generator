@@ -1830,8 +1830,6 @@ h1 {
   font-weight: 700;
 }
 
-.access-muted { color: #756f80; font-size: 14px; }
-
 .paid-credit-banner {
   display: flex;
   justify-content: space-between;
