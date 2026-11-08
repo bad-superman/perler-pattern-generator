@@ -30,6 +30,13 @@ export class AccessClientError extends Error {
   }
 }
 
+export class AccessNetworkError extends Error {
+  constructor(message = '网络连接异常，请检查网络后重试') {
+    super(message)
+    this.name = 'AccessNetworkError'
+  }
+}
+
 async function readResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => ({})) as T & { code?: string; error?: string }
   if (!response.ok) throw new AccessClientError(body.error || '请求失败', body.code || 'REQUEST_FAILED', response.status)
@@ -37,13 +44,30 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 
 export async function verifyAccessToken(token: string): Promise<AccessPassSummary> {
-  const response = await fetch('/api/access/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  })
-  const body = await readResponse<{ pass: AccessPassSummary }>(response)
-  return body.pass
+  let lastError: unknown
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 20_000)
+    try {
+      const response = await fetch('/api/access/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+        signal: controller.signal,
+      })
+      const body = await readResponse<{ pass: AccessPassSummary }>(response)
+      return body.pass
+    } catch (cause) {
+      if (cause instanceof AccessClientError) throw cause
+      lastError = cause
+      if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 500))
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }
+  throw new AccessNetworkError(lastError instanceof DOMException && lastError.name === 'AbortError'
+    ? '验证服务响应较慢，请点击重试'
+    : '网络连接异常，请检查网络后重试')
 }
 
 export async function fetchAccessPasses(token: string): Promise<AccessPassSummary[]> {

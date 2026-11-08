@@ -980,7 +980,7 @@ function App() {
 
   if (screen === 'admin') return <AdminPage />
   if (screen === 'access-admin') return <AccessAdminPage />
-  if (IS_PRO_SITE && (paidAccess.loading || !paidAccess.pass)) return <AccessGate loading={paidAccess.loading} error={paidAccess.error} />
+  if (IS_PRO_SITE && (paidAccess.loading || !paidAccess.pass)) return <AccessGate loading={paidAccess.loading} error={paidAccess.error} onRetry={() => { void paidAccess.refresh() }} />
 
   if (isMobile) {
     return (

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { IS_PRO_SITE } from '../config/site'
-import { AccessClientError, verifyAccessToken, type AccessPassSummary } from './client'
+import { AccessClientError, AccessNetworkError, verifyAccessToken, type AccessPassSummary } from './client'
 
 const TOKEN_KEY = 'perler-pro-access-token'
 
@@ -9,8 +9,25 @@ function tokenFromPath() {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
+function storedToken() {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function storeToken(token: string) {
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token)
+    else sessionStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // Some embedded browsers disable sessionStorage. The in-memory token still works.
+  }
+}
+
 export function usePaidAccess() {
-  const [token, setToken] = useState(() => tokenFromPath() || sessionStorage.getItem(TOKEN_KEY) || '')
+  const [token, setToken] = useState(() => tokenFromPath() || storedToken())
   const [pass, setPass] = useState<AccessPassSummary | null>(null)
   const [loading, setLoading] = useState(IS_PRO_SITE)
   const [error, setError] = useState('')
@@ -26,15 +43,17 @@ export function usePaidAccess() {
     setLoading(true)
     try {
       const nextPass = await verifyAccessToken(nextToken)
-      sessionStorage.setItem(TOKEN_KEY, nextToken)
+      storeToken(nextToken)
       setToken(nextToken)
       setPass(nextPass)
       setError('')
       if (tokenFromPath()) window.history.replaceState({}, '', '/')
     } catch (cause) {
-      sessionStorage.removeItem(TOKEN_KEY)
+      if (cause instanceof AccessClientError) storeToken('')
       setPass(null)
-      setError(cause instanceof AccessClientError ? cause.message : '专属链接验证失败')
+      setError(cause instanceof AccessClientError || cause instanceof AccessNetworkError
+        ? cause.message
+        : '验证服务暂时不可用，请重试')
     } finally {
       setLoading(false)
     }
