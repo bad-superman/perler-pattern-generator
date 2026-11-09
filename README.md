@@ -103,6 +103,103 @@ npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Funct
 - AI 生成约需 30–90 秒；若遇超时，检查 CF Workers 时长限制，必要时升级 Paid 计划
 - 只需 **本地转换** 时，可不配置 `AI_DEFAULT_API_KEY`，AI 模式会报错但不影响本地模式
 
+## 免费站与付费站
+
+生产环境使用两个独立的 Cloudflare Pages 项目，共用同一套量化、AI、生图后处理、编辑和导出代码：
+
+- 免费站：<https://perler-pattern-generator-37c.pages.dev>
+- 付费站：<https://perler-pattern-generator-pro.pages.dev>
+
+两个项目都监听 `main` 分支，但使用不同的构建配置：
+
+| 项目 | 构建命令 | Wrangler 配置 | 站点模式 |
+|---|---|---|---|
+| 免费站 | `npm run build` | `wrangler.toml` | `free` |
+| 付费站 | `cp wrangler.paid.toml wrangler.toml && VITE_SITE_MODE=pro npm run build` | `wrangler.paid.toml` | `pro` |
+
+付费站使用独立的 D1 数据库 `perler-paid-production`，Binding 名为 `PAID_DB`。数据库迁移文件位于 [`migrations-paid/`](migrations-paid/)，不要把生产 `PAID_DB` 绑定到免费站。
+
+付费项目的 Production 环境还需要配置以下加密变量：
+
+| 变量名 | 说明 |
+|---|---|
+| `AI_DEFAULT_API_KEY` | ModelMux 或默认 AI Provider 的 API Key |
+| `ADMIN_TOKEN` | 专属链接管理后台及管理接口口令 |
+| `AI_FALLBACK_API_KEY` | 可选，备用 AI Provider 的 API Key |
+
+更完整的双站点部署和回滚说明见 [`doc/paid-site-deployment.md`](doc/paid-site-deployment.md)。
+
+### 生成付费专属链接
+
+#### 使用管理后台
+
+访问付费站的 `/admin/access`，例如：
+
+```text
+https://perler-pattern-generator-pro.pages.dev/admin/access
+```
+
+输入 Production 环境中的 `ADMIN_TOKEN` 后，可以：
+
+- 创建专属链接并设置备注、生成次数和有效期
+- 查看剩余次数、预占次数、生成任务和额度流水
+- 追加次数
+- 停用或恢复链接
+- 清理超过 10 分钟的异常预占
+
+Token 明文只在创建时返回一次，应立即复制并通过安全渠道交付给客户。数据库只保存 Token 的 SHA-256 哈希。
+
+#### 使用管理接口
+
+创建一个永久有效、可成功生成 10 次的专属链接：
+
+```bash
+curl -X POST \
+  'https://perler-pattern-generator-pro.pages.dev/api/admin/passes' \
+  -H 'Authorization: Bearer <ADMIN_TOKEN>' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "label": "客户名称或订单号",
+    "totalCredits": 10,
+    "expiresAt": null
+  }'
+```
+
+`expiresAt` 使用 Unix 毫秒时间戳，`null` 表示永久有效。响应中的 `url` 就是需要交付给客户的完整专属链接：
+
+```json
+{
+  "pass": {
+    "id": "pass_xxx",
+    "label": "客户名称或订单号",
+    "totalCredits": 10,
+    "remainingCredits": 10,
+    "status": "active"
+  },
+  "token": "仅本次响应返回的明文Token",
+  "url": "https://perler-pattern-generator-pro.pages.dev/access/专属Token"
+}
+```
+
+查询全部专属链接：
+
+```bash
+curl \
+  'https://perler-pattern-generator-pro.pages.dev/api/admin/passes' \
+  -H 'Authorization: Bearer <ADMIN_TOKEN>'
+```
+
+订单系统可以在支付成功回调中调用创建接口，并将响应中的 `url` 自动发送给客户。`ADMIN_TOKEN` 只能保存在服务端 Secret 中，禁止写入浏览器代码、日志或 Git 仓库。
+
+### 次数扣减规则
+
+- AI 请求开始时先预占 1 次额度，避免并发透支。
+- AI 成功返回图片后正式扣减 1 次。
+- AI 配置错误、网络失败或 Provider 失败时释放预占，不扣次数。
+- 本地量化、图纸编辑和导出不消耗次数。
+- 剩余次数为 0 时，接口返回 `402 CREDITS_EXHAUSTED`，前端禁用生成入口并显示明确提示。
+- `Idempotency-Key` 用于避免同一请求因重复提交而重复扣费。
+
 ## 部署（使用 Nginx）
 
 本项目构建后是一组静态文件，使用 Nginx 托管即可。以下流程以 Ubuntu/Debian 为例。
