@@ -8,6 +8,10 @@ AI_DEFAULT_PROVIDER = "openai-responses"
 AI_DEFAULT_API_BASE = "https://modelmux.io/v1"
 AI_DEFAULT_MODEL = "gpt-5.6-sol"
 AI_DEFAULT_TIMEOUT_MS = "150000"
+AI_FALLBACK_PROVIDER = "openai-responses"
+AI_FALLBACK_API_BASE = "https://modelmux.io/v1"
+AI_FALLBACK_MODEL = "agnes-image-2.5-flash"
+AI_FALLBACK_TIMEOUT_MS = "150000"
 
 [[d1_databases]]
 binding = "PAID_DB"
