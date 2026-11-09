@@ -1,0 +1,16 @@
+name = "perler-pattern-generator-pro"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+[vars]
+SITE_MODE = "pro"
+AI_DEFAULT_PROVIDER = "openai-responses"
+AI_DEFAULT_API_BASE = "https://modelmux.io/v1"
+AI_DEFAULT_MODEL = "gpt-5.6-sol"
+AI_DEFAULT_TIMEOUT_MS = "150000"
+
+[[d1_databases]]
+binding = "PAID_DB"
+database_name = "perler-paid-production"
+database_id = "57fd484a-8410-4fb7-bcbf-fcff7e6980da"
+migrations_dir = "migrations-paid"

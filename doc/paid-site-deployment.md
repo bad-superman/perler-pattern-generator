@@ -2,7 +2,12 @@
 
 ## Pages 项目
 
-两个 Cloudflare Pages 项目连接同一仓库和同一生产分支，构建命令均为 `npm run build`，输出目录均为 `dist`。
+两个 Cloudflare Pages 项目连接同一仓库和同一生产分支，输出目录均为 `dist`。
+
+- 免费站构建命令：`npm run build`，使用仓库根目录的 `wrangler.toml`。
+- 付费站构建命令：`cp wrangler.paid.toml wrangler.toml && VITE_SITE_MODE=pro npm run build`，使用独立的生产付费库配置。
+
+这样免费站不会获得 `PAID_DB` Binding，付费站也不会误用免费站的图库数据库。
 
 免费站变量：
 
