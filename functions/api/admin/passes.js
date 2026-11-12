@@ -1,6 +1,7 @@
 import { createAccessD1Store } from '../../../server/access/d1-store.mjs'
 import { errorResponse, json, requireAdmin, requirePaidDb } from '../../../server/access/http.mjs'
 import { createPass, publicPass } from '../../../server/access/service.mjs'
+import { resolvePaidSiteOrigin } from '../../../server/site/config.mjs'
 
 export async function onRequest(context) {
   try {
@@ -12,7 +13,7 @@ export async function onRequest(context) {
     if (context.request.method === 'POST') {
       const input = await context.request.json().catch(() => ({}))
       const created = await createPass(store, input)
-      const origin = new URL(context.request.url).origin
+      const origin = resolvePaidSiteOrigin(context.env, context.request)
       return json(201, { ...created, url: `${origin}/access/${created.token}` })
     }
     return json(405, { error: '不支持的操作' })

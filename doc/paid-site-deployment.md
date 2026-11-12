@@ -21,9 +21,12 @@ SITE_MODE=free
 ```text
 VITE_SITE_MODE=pro
 SITE_MODE=pro
+PAID_SITE_ORIGIN=https://你的付费站自有域名
 ```
 
-`VITE_*` 会进入浏览器资源，不能写入密钥。`SITE_MODE`、AI Key 和 `ADMIN_TOKEN` 只配置在 Pages Functions 环境。
+`PAID_SITE_ORIGIN` 用于管理员创建专属链接时拼接 `/access/:token`。可填写完整 Origin（推荐，例如 `https://pro.example.com`），也可只填写域名；未配置或留空时继续使用当前管理接口请求的 Origin。
+
+`VITE_*` 会进入浏览器资源，不能写入密钥。`SITE_MODE`、`PAID_SITE_ORIGIN`、AI Key 和 `ADMIN_TOKEN` 只配置在 Pages Functions 环境。
 
 ## Binding 与 Secret
 
@@ -41,6 +44,7 @@ ADMIN_TOKEN
 ```text
 GALLERY_DB（需要图库时）
 PAID_DB
+PAID_SITE_ORIGIN（可选，专属链接使用的自有域名）
 AI_DEFAULT_API_KEY
 AI_FALLBACK_API_KEY（如启用）
 ADMIN_TOKEN
@@ -71,15 +75,16 @@ npm test
 
 发布付费站后完成以下冒烟测试：
 
-1. 打开 `/admin/access` 创建 2 次测试链接。
-2. 使用专属链接进入，确认地址栏中的 Token 被立即移除。
-3. 成功生成一次，确认余额从 2 变为 1。
-4. 使用错误 AI 配置模拟失败，确认余额仍为 1。
-5. 成功生成第二次，确认余额为 0 且按钮禁用。
-6. 再次调用生成接口，确认返回 `402 CREDITS_EXHAUSTED`。
-7. 重复提交相同 `Idempotency-Key`，确认不会重复扣费。
-8. 在管理后台追加次数、停用和恢复链接。
-9. 点击“清理超时预占”，确认超过 10 分钟的中断任务被释放。
+1. 打开 `/admin/access` 创建 2 次测试链接，确认链接使用 `PAID_SITE_ORIGIN`；清空该配置后确认回退到当前请求域名。
+2. 不带专属链接直接打开付费站，确认本地转换、画板、编辑和导出可正常使用，点击 AI 生成时才提示需要专属链接。
+3. 使用专属链接进入，确认地址栏中的 Token 被立即移除。
+4. 成功生成一次，确认余额从 2 变为 1。
+5. 使用错误 AI 配置模拟失败，确认余额仍为 1。
+6. 成功生成第二次，确认余额为 0。
+7. 再次调用生成接口，确认返回 `402 CREDITS_EXHAUSTED`。
+8. 重复提交相同 `Idempotency-Key`，确认不会重复扣费。
+9. 在管理后台追加次数、停用和恢复链接。
+10. 点击“清理超时预占”，确认超过 10 分钟的中断任务被释放。
 
 ## 回滚
 

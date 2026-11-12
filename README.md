@@ -126,6 +126,7 @@ npm run pages:dev                # 构建并用 wrangler 本地跑 Pages + Funct
 | `AI_DEFAULT_API_KEY` | ModelMux 或默认 AI Provider 的 API Key |
 | `ADMIN_TOKEN` | 专属链接管理后台及管理接口口令 |
 | `AI_FALLBACK_API_KEY` | 可选，备用 AI Provider 的 API Key |
+| `PAID_SITE_ORIGIN` | 可选，生成专属链接时使用的付费站自有 Origin；未配置时使用管理接口当前域名 |
 
 更完整的双站点部署和回滚说明见 [`doc/paid-site-deployment.md`](doc/paid-site-deployment.md)。
 

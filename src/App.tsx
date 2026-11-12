@@ -45,7 +45,6 @@ import { quantizeToPalette, type DitherMode } from './quantize'
 import { fileTraits, registerContext, track, type PatternTrigger } from './analytics'
 import './App.css'
 import { IS_PRO_SITE } from './config/site'
-import { AccessGate } from './access/AccessGate'
 import { AccessAdminPage } from './access/AccessAdminPage'
 import { usePaidAccess } from './access/usePaidAccess'
 
@@ -557,6 +556,14 @@ function App() {
   }
 
   async function generateWithAi() {
+    if (IS_PRO_SITE && paidAccess.loading) {
+      setError('正在验证 AI 专属链接，请稍后重试')
+      return
+    }
+    if (IS_PRO_SITE && !paidAccess.pass) {
+      setError(paidAccess.error || 'AI 生成需要有效的专属链接')
+      return
+    }
     if (paidCreditsExhausted) {
       setError('当前专属链接的生成次数已用完')
       return
@@ -980,15 +987,30 @@ function App() {
 
   if (screen === 'admin') return <AdminPage />
   if (screen === 'access-admin') return <AccessAdminPage />
-  if (IS_PRO_SITE && (paidAccess.loading || !paidAccess.pass)) return <AccessGate loading={paidAccess.loading} error={paidAccess.error} onRetry={() => { void paidAccess.refresh() }} />
+
+  const paidAccessBanner = IS_PRO_SITE ? (
+    paidAccess.pass ? (
+      <>
+        <strong>AI 生成剩余 {paidAccess.pass.availableCredits} 次</strong>
+        <span>AI 成功生成扣 1 次；本地转换、画板、编辑和导出不扣次数。</span>
+      </>
+    ) : paidAccess.loading ? (
+      <>
+        <strong>正在验证 AI 专属链接…</strong>
+        <span>验证期间仍可使用本地转换、画板、编辑和导出。</span>
+      </>
+    ) : (
+      <>
+        <strong>AI 生成需要有效的专属链接</strong>
+        <span>{paidAccess.error || '本地转换、画板、编辑和导出仍可正常使用。'}</span>
+      </>
+    )
+  ) : null
 
   if (isMobile) {
     return (
       <>
-        {IS_PRO_SITE && paidAccess.pass && <div className="paid-credit-banner mobile-paid-credit">
-          <strong>AI 剩余 {paidAccess.pass.availableCredits} 次</strong>
-          <span>成功生成扣 1 次</span>
-        </div>}
+        {paidAccessBanner && <div className="paid-credit-banner mobile-paid-credit">{paidAccessBanner}</div>}
         {fileInputs}
         <MobileLayout
         sourceMode={sourceMode}
@@ -1046,7 +1068,7 @@ function App() {
         effectReferenceName={effectReferenceName}
         onEffectFile={handleEffectReferenceFile}
         clearEffect={clearEffectReference}
-        isProcessing={isProcessing || paidCreditsExhausted}
+        isProcessing={isProcessing}
         isEditing={isEditing}
         enterEdit={enterEditMode}
         exitEdit={exitEditMode}
@@ -1087,10 +1109,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      {IS_PRO_SITE && paidAccess.pass && <div className="paid-credit-banner">
-        <strong>AI 生成剩余 {paidAccess.pass.availableCredits} 次</strong>
-        <span>AI 成功生成扣 1 次；量化、编辑和导出不扣次数。</span>
-      </div>}
+      {paidAccessBanner && <div className="paid-credit-banner">{paidAccessBanner}</div>}
       <section className="hero-section">
         <div className="hero-copy">
           <div className="eyebrow"><Sparkles size={16} /> Perler Beads Pattern Maker</div>
@@ -1233,7 +1252,7 @@ function App() {
                 className="primary-btn ai-generate-btn"
                 type="button"
                 onClick={() => void generateWithAi()}
-                disabled={!sourcePreview || isAiGenerating || isProcessing || paidCreditsExhausted}
+                disabled={!sourcePreview || isAiGenerating || isProcessing}
               >
                 {isAiGenerating ? <LoaderCircle className="spin-icon" size={18} /> : <WandSparkles size={18} />}
                 {isAiGenerating ? 'AI 生成中…' : 'AI 生成拼豆图'}

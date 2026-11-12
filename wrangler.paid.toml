@@ -4,6 +4,7 @@ pages_build_output_dir = "dist"
 
 [vars]
 SITE_MODE = "pro"
+# PAID_SITE_ORIGIN = "https://pro.example.com"
 AI_DEFAULT_PROVIDER = "openai-responses"
 AI_DEFAULT_API_BASE = "https://modelmux.io/v1"
 AI_DEFAULT_MODEL = "gpt-5.6-sol"
