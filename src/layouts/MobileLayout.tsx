@@ -5,7 +5,7 @@ import { PatternZoomView } from '../components/PatternZoomView'
 import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, type AiFraming } from '../agnes/styles'
 import type { BeadPaletteEntry, PaletteBrand } from '../palettes'
 import type { BeadCell, PaletteColor } from '../pattern/types'
-import { isAndroidRuntime } from '../pattern/exportSheet'
+import { isAndroidRuntime, isAndroidWechatRuntime } from '../pattern/exportSheet'
 import type { BoardShape, DitherMode } from '../quantize'
 import type { PatternTrigger } from '../analytics'
 import { GalleryPage } from '../gallery/GalleryPage'
@@ -198,7 +198,8 @@ export function MobileLayout(props: MobileLayoutProps) {
   const paperRef = useRef<HTMLDivElement>(null)
   const [paperBox, setPaperBox] = useState(320)
   const hasPattern = props.pattern.length > 0
-  const exportLabel = isAndroidRuntime() ? '下载图片' : '保存到相册'
+  const isWechat = isAndroidWechatRuntime()
+  const exportLabel = isAndroidRuntime() && !isWechat ? '下载图片' : '保存到相册'
   const showGenerate = props.sourceMode !== 'board' && !hasPattern
   const paperWidth = Math.max(1, props.gridCols * props.cellSize + Math.max(0, props.gridCols - 1) + 24)
   const paperHeight = Math.max(1, props.gridRows * props.cellSize + Math.max(0, props.gridRows - 1) + 24)
@@ -518,9 +519,9 @@ export function MobileLayout(props: MobileLayoutProps) {
       {props.exportSheetUrl && (
         <div className="m-sheet" role="dialog">
           <img src={props.exportSheetUrl} alt="拼豆图纸，长按可保存到相册" />
-          <p>长按图片，选择“保存到相册”</p>
+          <p>{isWechat ? '请长按上方图片，在微信菜单中选择“保存图片”' : '长按图片，选择“保存到相册”'}</p>
           <div className="m-sheet-actions">
-            <button type="button" onClick={props.downloadSheet}>下载文件</button>
+            {!isWechat && <button type="button" onClick={props.downloadSheet}>下载文件</button>}
             <button type="button" onClick={props.closeExportSheet}>关闭</button>
           </div>
         </div>

@@ -7,7 +7,9 @@ import {
   deliverPatternPng,
   formatExportError,
   isAndroidRuntime,
+  isAndroidWechatRuntime,
   limitExportCanvas,
+  releaseExportSheetUrl,
   sanitizeExportFilename,
 } from '../pattern/exportSheet'
 import { fetchGalleryPage, formatGalleryDate, type GalleryItem } from './client'
@@ -84,7 +86,8 @@ export function GalleryPage() {
 
 function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => void }) {
   const isMobile = useMediaQuery('(max-width: 620px)')
-  const exportLabel = isMobile ? (isAndroidRuntime() ? '下载图片' : '保存到相册') : '导出 PNG'
+  const isWechat = isAndroidWechatRuntime()
+  const exportLabel = isMobile ? (isAndroidRuntime() && !isWechat ? '下载图片' : '保存到相册') : '导出 PNG'
   const [mirrored, setMirrored] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [notice, setNotice] = useState('')
@@ -93,7 +96,7 @@ function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => vo
   const previewCells = view.pattern.flat().map((cell) => cell.colorIndex)
 
   useEffect(() => () => {
-    if (sheetUrl) URL.revokeObjectURL(sheetUrl)
+    if (sheetUrl) releaseExportSheetUrl(sheetUrl)
   }, [sheetUrl])
 
   async function exportSheet() {
@@ -130,7 +133,7 @@ function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => vo
   }
 
   function closeSheet() {
-    if (sheetUrl) URL.revokeObjectURL(sheetUrl)
+    if (sheetUrl) releaseExportSheetUrl(sheetUrl)
     setSheetUrl('')
   }
 
@@ -175,9 +178,9 @@ function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => vo
       {sheetUrl && (
         <div className="export-sheet gallery-export-sheet" role="dialog" aria-label="保存到相册" onClick={(event) => event.stopPropagation()}>
           <img src={sheetUrl} alt="拼豆图纸，长按可保存到相册" />
-          <p>长按图片，选择“保存到相册”</p>
+          <p>{isWechat ? '请长按上方图片，在微信菜单中选择“保存图片”' : '长按图片，选择“保存到相册”'}</p>
           <div className="export-sheet-actions">
-            <button type="button" onClick={downloadSheet}>下载文件</button>
+            {!isWechat && <button type="button" onClick={downloadSheet}>下载文件</button>}
             <button type="button" onClick={closeSheet}>关闭</button>
           </div>
         </div>

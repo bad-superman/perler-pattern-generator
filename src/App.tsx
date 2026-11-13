@@ -29,7 +29,9 @@ import {
   deliverPatternPng,
   formatExportError,
   formatLegendLabel,
+  isAndroidWechatRuntime,
   limitExportCanvas,
+  releaseExportSheetUrl,
   sanitizeExportFilename,
 } from './pattern/exportSheet'
 import { EMPTY_CELL_HEX, type BeadCell, type PaletteColor } from './pattern/types'
@@ -239,6 +241,7 @@ function App() {
   const [boardConfirm, setBoardConfirm] = useState(false)
   const [exportSheetUrl, setExportSheetUrl] = useState('')
   const isMobile = useMediaQuery('(max-width: 620px)')
+  const isAndroidWechat = isAndroidWechatRuntime()
   const [aiCandidates, setAiCandidates] = useState<Array<{ url: string; file: File }>>([])
   const [aiCandidateIndex, setAiCandidateIndex] = useState(0)
   const quantizeRef = useRef({ removeBackground: true, cleanupIsolated: true, dither: 'off' as DitherMode })
@@ -899,6 +902,7 @@ function App() {
   }
 
   function downloadExportSheet() {
+    if (isAndroidWechat) return
     saveAs(exportSheetUrl, `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`)
     setShareOpen(true)
     track('pattern_exported', {
@@ -1094,7 +1098,7 @@ function App() {
         exportPng={() => void exportPng()}
         isExporting={isExporting}
         exportSheetUrl={exportSheetUrl}
-        closeExportSheet={() => { if (exportSheetUrl) URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}
+        closeExportSheet={() => { if (exportSheetUrl) releaseExportSheetUrl(exportSheetUrl); setExportSheetUrl('') }}
         downloadSheet={downloadExportSheet}
         error={error}
         aiNotice={aiNotice}
@@ -1559,10 +1563,10 @@ function App() {
       {exportSheetUrl && (
         <div className="export-sheet" role="dialog" aria-label="保存到相册">
           <img src={exportSheetUrl} alt="拼豆图纸，长按可保存到相册" />
-          <p>长按图片，选择“保存到相册”</p>
+          <p>{isAndroidWechat ? '请长按上方图片，在微信菜单中选择“保存图片”' : '长按图片，选择“保存到相册”'}</p>
           <div className="export-sheet-actions">
-            <button type="button" onClick={downloadExportSheet}>下载文件</button>
-            <button type="button" onClick={() => { URL.revokeObjectURL(exportSheetUrl); setExportSheetUrl('') }}>关闭</button>
+            {!isAndroidWechat && <button type="button" onClick={downloadExportSheet}>下载文件</button>}
+            <button type="button" onClick={() => { releaseExportSheetUrl(exportSheetUrl); setExportSheetUrl('') }}>关闭</button>
           </div>
         </div>
       )}

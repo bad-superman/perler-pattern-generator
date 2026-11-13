@@ -254,6 +254,30 @@ export function isAndroidRuntime() {
   return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
 }
 
+export function isWechatRuntime() {
+  return typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent)
+}
+
+export function isAndroidWechatRuntime() {
+  return isAndroidRuntime() && isWechatRuntime()
+}
+
+export function releaseExportSheetUrl(url: string) {
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('无法生成可保存的图片'))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('无法读取导出图片'))
+    reader.readAsDataURL(blob)
+  })
+}
+
 export async function deliverPatternPng({
   blob,
   filename,
@@ -265,6 +289,15 @@ export async function deliverPatternPng({
   mobile: boolean
   existingSheetUrl?: string
 }): Promise<{ outcome: PatternExportOutcome; sheetUrl?: string; notice: string }> {
+  // Android WeChat blocks download links created from Blob URLs and asks the
+  // user to open the page in another browser. A data URL rendered as a normal
+  // <img> stays entirely client-side and can be saved with WeChat's native
+  // long-press image menu.
+  if (isAndroidWechatRuntime()) {
+    if (existingSheetUrl) releaseExportSheetUrl(existingSheetUrl)
+    return { outcome: 'share_sheet', sheetUrl: await blobToDataUrl(blob), notice: '' }
+  }
+
   // Android share sheets do not consistently expose a "save image" action.
   // Download the PNG directly instead; Android browsers normally place it in
   // the Downloads folder, where gallery apps can index it.
@@ -286,7 +319,7 @@ export async function deliverPatternPng({
         }
       }
     }
-    if (existingSheetUrl) URL.revokeObjectURL(existingSheetUrl)
+    if (existingSheetUrl) releaseExportSheetUrl(existingSheetUrl)
     return { outcome: 'share_sheet', sheetUrl: URL.createObjectURL(blob), notice: '' }
   }
   saveAs(blob, filename)
