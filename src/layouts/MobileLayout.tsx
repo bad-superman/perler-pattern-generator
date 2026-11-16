@@ -196,6 +196,7 @@ export function MobileLayout(props: MobileLayoutProps) {
   const [legendOpen, setLegendOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false)
   const [customSize, setCustomSize] = useState(String(props.gridSize))
+  const [colorDraft, setColorDraft] = useState<string | null>(null)
   const paperRef = useRef<HTMLDivElement>(null)
   const [paperBox, setPaperBox] = useState(320)
   const hasPattern = props.pattern.length > 0
@@ -225,8 +226,10 @@ export function MobileLayout(props: MobileLayoutProps) {
     if (props.sourceMode !== 'board') props.regenerate(next, props.maxColors, props.shape, 'grid_size')
   }
 
-  function commitColors(next: number) {
-    const value = Math.min(props.colorSliderMax, Math.max(4, next))
+  function commitColors(raw: number) {
+    const value = Math.min(props.colorSliderMax, Math.max(4, Math.round(Number.isFinite(raw) ? raw : props.maxColors)))
+    setColorDraft(null)
+    if (value === props.maxColors) return
     props.setMaxColors(value)
     if (props.sourceMode !== 'board') props.regenerate(props.gridSize, value, props.shape, 'max_colors')
   }
@@ -430,9 +433,19 @@ export function MobileLayout(props: MobileLayoutProps) {
           <div className="m-row" style={{ marginTop: 14 }}>
             最大颜色数
             <span className="m-stepper">
-              <button type="button" onClick={() => commitColors(props.maxColors - 1)}>−</button>
-              <b>{props.maxColors}</b>
-              <button type="button" onClick={() => commitColors(props.maxColors + 1)}>+</button>
+              <button type="button" onClick={() => commitColors(props.maxColors - 1)} aria-label="减少颜色数">−</button>
+              <input
+                inputMode="numeric"
+                aria-label="最大颜色数"
+                value={colorDraft ?? String(props.maxColors)}
+                onFocus={() => setColorDraft(String(props.maxColors))}
+                onChange={(event) => setColorDraft(event.target.value)}
+                onBlur={() => commitColors(Number(colorDraft) || props.maxColors)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur()
+                }}
+              />
+              <button type="button" onClick={() => commitColors(props.maxColors + 1)} aria-label="增加颜色数">+</button>
             </span>
           </div>
         )}

@@ -184,7 +184,22 @@
 
 .m-stepper { display: inline-flex; align-items: center; border: 1px solid rgba(23, 19, 31, 0.16); border-radius: 12px; }
 .m-stepper button { width: 40px; border: 0; background: transparent; }
-.m-stepper b { width: 36px; text-align: center; }
+.m-stepper input {
+  width: 48px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  font: inherit;
+  font-weight: 700;
+  color: #17131f;
+  -moz-appearance: textfield;
+}
+.m-stepper input::-webkit-outer-spin-button,
+.m-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 
 .m-custom {
   width: 72px;

@@ -324,6 +324,18 @@ h1 {
   gap: 4px 8px;
 }
 
+.color-count-input {
+  width: 64px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink);
+  text-align: center;
+  font: inherit;
+  font-weight: 800;
+}
+
 .control-hint {
   flex-basis: 100%;
   font-size: 12px;

@@ -1305,7 +1305,32 @@ function App() {
           {sourceMode !== 'board' && (
             <>
               <label>
-                <span>最大颜色数 <b>{maxColors}</b></span>
+                <span>
+                  最大颜色数
+                  <input
+                    className="color-count-input"
+                    type="number"
+                    inputMode="numeric"
+                    min={4}
+                    max={colorSliderMax}
+                    value={maxColors}
+                    aria-label="最大颜色数"
+                    onChange={(event) => {
+                      const next = Number(event.target.value)
+                      if (!Number.isFinite(next)) return
+                      setMaxColors(Math.min(colorSliderMax, Math.max(4, Math.round(next))))
+                    }}
+                    onBlur={(event) => {
+                      const next = Math.min(colorSliderMax, Math.max(4, Math.round(Number(event.target.value)) || maxColors))
+                      setMaxColors(next)
+                      void regenerate(gridSize, next, shape, paletteBrand, 'max_colors')
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return
+                      event.currentTarget.blur()
+                    }}
+                  />
+                </span>
                 <input type="range" min="4" max={colorSliderMax} step="1" value={maxColors} onChange={(event) => setMaxColors(Number(event.target.value))} onPointerUp={(event) => {
                   void regenerate(gridSize, Number(event.currentTarget.value), shape, paletteBrand, 'max_colors')
                 }} onKeyUp={(event) => {
