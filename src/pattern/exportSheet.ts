@@ -250,6 +250,10 @@ export function buildPatternExportCanvas(
 
 export type PatternExportOutcome = 'downloaded' | 'share' | 'share_aborted' | 'share_sheet'
 
+export function isAndroidRuntime() {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+}
+
 export async function deliverPatternPng({
   blob,
   filename,
@@ -261,6 +265,14 @@ export async function deliverPatternPng({
   mobile: boolean
   existingSheetUrl?: string
 }): Promise<{ outcome: PatternExportOutcome; sheetUrl?: string; notice: string }> {
+  // Android share sheets do not consistently expose a "save image" action.
+  // Download the PNG directly instead; Android browsers normally place it in
+  // the Downloads folder, where gallery apps can index it.
+  if (isAndroidRuntime()) {
+    saveAs(blob, filename)
+    return { outcome: 'downloaded', notice: '图片已开始下载，请在相册或“下载”目录中查看' }
+  }
+
   if (mobile) {
     const file = new File([blob], filename, { type: 'image/png' })
     const shareData = { files: [file], title: filename }

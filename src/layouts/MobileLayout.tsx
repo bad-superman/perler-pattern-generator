@@ -5,6 +5,7 @@ import { PatternZoomView } from '../components/PatternZoomView'
 import { AGNES_STYLE_PRESETS, AI_FRAMING_OPTIONS, type AiFraming } from '../agnes/styles'
 import type { BeadPaletteEntry, PaletteBrand } from '../palettes'
 import type { BeadCell, PaletteColor } from '../pattern/types'
+import { isAndroidRuntime } from '../pattern/exportSheet'
 import type { BoardShape, DitherMode } from '../quantize'
 import type { PatternTrigger } from '../analytics'
 import { GalleryPage } from '../gallery/GalleryPage'
@@ -197,6 +198,7 @@ export function MobileLayout(props: MobileLayoutProps) {
   const paperRef = useRef<HTMLDivElement>(null)
   const [paperBox, setPaperBox] = useState(320)
   const hasPattern = props.pattern.length > 0
+  const exportLabel = isAndroidRuntime() ? '下载图片' : '保存到相册'
   const showGenerate = props.sourceMode !== 'board' && !hasPattern
   const paperWidth = Math.max(1, props.gridCols * props.cellSize + Math.max(0, props.gridCols - 1) + 24)
   const paperHeight = Math.max(1, props.gridRows * props.cellSize + Math.max(0, props.gridRows - 1) + 24)
@@ -466,7 +468,7 @@ export function MobileLayout(props: MobileLayoutProps) {
         <div className="m-actionbar">
           <button className="m-secondary" type="button" onClick={props.onGenerate} disabled={props.isProcessing || props.isAiGenerating}>重新生成</button>
           <button className="m-secondary" type="button" onClick={props.enterEdit}>编辑</button>
-          <button className="m-primary" type="button" onClick={props.exportPng} disabled={props.isExporting}>保存到相册</button>
+          <button className="m-primary" type="button" onClick={props.exportPng} disabled={props.isExporting}>{exportLabel}</button>
         </div>
       )}
 

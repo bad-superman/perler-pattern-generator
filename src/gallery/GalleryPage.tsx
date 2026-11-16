@@ -6,6 +6,7 @@ import {
   canvasToBlob,
   deliverPatternPng,
   formatExportError,
+  isAndroidRuntime,
   limitExportCanvas,
   sanitizeExportFilename,
 } from '../pattern/exportSheet'
@@ -83,6 +84,7 @@ export function GalleryPage() {
 
 function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => void }) {
   const isMobile = useMediaQuery('(max-width: 620px)')
+  const exportLabel = isMobile ? (isAndroidRuntime() ? '下载图片' : '保存到相册') : '导出 PNG'
   const [mirrored, setMirrored] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [notice, setNotice] = useState('')
@@ -165,7 +167,7 @@ function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => vo
               镜像
             </button>
             <button type="button" className="primary-btn" disabled={exporting} onClick={() => void exportSheet()}>
-              {exporting ? '导出中...' : isMobile ? '保存到相册' : '导出 PNG'}
+              {exporting ? '导出中...' : exportLabel}
             </button>
           </div>
         </div>
