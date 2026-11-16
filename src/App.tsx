@@ -228,7 +228,7 @@ function App() {
   const [replaceFromSymbol, setReplaceFromSymbol] = useState('')
   const [replaceToPaletteIndex, setReplaceToPaletteIndex] = useState(-1)
   const [paletteBrand, setPaletteBrand] = useState<PaletteBrand>(DEFAULT_PALETTE_BRAND)
-  const [removeBackground, setRemoveBackground] = useState(true)
+  const [removeBackground, setRemoveBackground] = useState(false)
   const [cleanupIsolated, setCleanupIsolated] = useState(true)
   const [dither, setDither] = useState<DitherMode>('off')
   const [aiCandidateCount, setAiCandidateCount] = useState(1)
@@ -241,7 +241,7 @@ function App() {
   const isMobile = useMediaQuery('(max-width: 620px)')
   const [aiCandidates, setAiCandidates] = useState<Array<{ url: string; file: File }>>([])
   const [aiCandidateIndex, setAiCandidateIndex] = useState(0)
-  const quantizeRef = useRef({ removeBackground: true, cleanupIsolated: true, dither: 'off' as DitherMode })
+  const quantizeRef = useRef({ removeBackground: false, cleanupIsolated: true, dither: 'off' as DitherMode })
   const [sourceMode, setSourceMode] = useState<SourceMode>('local')
   const [aiStyleId, setAiStyleId] = useState(AGNES_STYLE_PRESETS[0].id)
   const [aiPrompt, setAiPrompt] = useState('')
@@ -858,12 +858,12 @@ function App() {
       })
       outcome = delivered.outcome
       if (delivered.sheetUrl) setExportSheetUrl(delivered.sheetUrl)
-      if (delivered.notice) setExportNotice(delivered.notice)
-      if (delivered.outcome === 'downloaded' || delivered.outcome === 'share') setShareOpen(true)
-      if (delivered.outcome === 'downloaded') {
+      if (delivered.notice) {
+        setExportNotice(delivered.notice)
         if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
         exportNoticeTimerRef.current = window.setTimeout(() => setExportNotice(''), 2800)
       }
+      if (delivered.outcome === 'downloaded' || delivered.outcome === 'share') setShareOpen(true)
     } catch (cause) {
       setError(`导出失败：${formatExportError(cause)}`)
       track('pattern_export_failed', { ...exportTraits, duration_ms: Date.now() - startedAt })
@@ -979,7 +979,15 @@ function App() {
   const shareUi = (
     <>
       {shareOpen && sharePattern && (
-        <ShareDialog pattern={sharePattern} onClose={() => setShareOpen(false)} onSuccess={finishShare} />
+        <ShareDialog
+          pattern={sharePattern}
+          onClose={() => {
+            setShareOpen(false)
+            setExportNotice('')
+            if (exportNoticeTimerRef.current) window.clearTimeout(exportNoticeTimerRef.current)
+          }}
+          onSuccess={finishShare}
+        />
       )}
       {exportNotice && <div className="export-toast" role="status" aria-live="polite">{exportNotice}</div>}
     </>
@@ -1147,7 +1155,7 @@ function App() {
           {sourceMode !== 'board' ? (
             <button className="upload-zone" type="button" onClick={() => uploadRef.current?.click()}>
               {sourcePreview ? <img src={sourcePreview} alt="上传预览" /> : <ImageUp size={34} />}
-              <span>{sourcePreview ? sourceName : '选择一张图片'}</span>
+              <span>{sourcePreview ? '点击更换图片' : '选择一张图片'}</span>
               <small>{sourceMode === 'ai' ? '上传参考图，AI 将聚焦主体并简化背景' : '按原图比例完整预览，不裁切'}</small>
             </button>
           ) : (

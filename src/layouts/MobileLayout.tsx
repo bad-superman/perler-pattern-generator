@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Menu, Sparkles } from 'lucide-react'
 import { BeadLogo } from '../components/BeadLogo'
 import { PatternEditor, type EditorTool } from '../components/PatternEditor'
 import { PatternZoomView } from '../components/PatternZoomView'
@@ -229,7 +230,14 @@ export function MobileLayout(props: MobileLayoutProps) {
     if (props.sourceMode !== 'board') props.regenerate(props.gridSize, value, props.shape, 'max_colors')
   }
 
-  const modeLabel = props.sourceMode === 'ai' ? 'AI 生成' : props.sourceMode === 'board' ? '画板绘制' : '本地转换'
+  // No mode is highlighted while the About page is showing.
+  const activeMode = page === 'app' ? props.sourceMode : null
+
+  function selectMode(mode: MobileLayoutProps['sourceMode']) {
+    props.switchSourceMode(mode)
+    setPage('app')
+    setMenuOpen(false)
+  }
 
   return (
     <main className={`m-shell ${hasPattern && !props.isEditing && page === 'app' ? 'has-bar' : ''}`}>
@@ -238,24 +246,21 @@ export function MobileLayout(props: MobileLayoutProps) {
           <BeadLogo size={28} />
           <strong>拼豆图纸</strong>
         </div>
-        <button className="m-menu-btn" type="button" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
-          {page === 'about' ? '关于' : modeLabel}
+        <div className="m-modes" role="group" aria-label="生成方式">
+          <button type="button" className={activeMode === 'local' ? 'active' : ''} aria-pressed={activeMode === 'local'} onClick={() => selectMode('local')}>本地转换</button>
+          <button type="button" className={`m-mode-ai ${activeMode === 'ai' ? 'active' : ''}`} aria-pressed={activeMode === 'ai'} onClick={() => selectMode('ai')}>
+            <Sparkles size={14} aria-hidden="true" />
+            AI 生成
+          </button>
+        </div>
+        <button className="m-menu-btn" type="button" aria-label="更多功能" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+          <Menu size={18} aria-hidden="true" />
         </button>
         {menuOpen && (
           <>
             <button className="m-menu-backdrop" type="button" aria-label="关闭菜单" onClick={() => setMenuOpen(false)} />
             <div className="m-menu" role="menu">
-              {([['local', '本地转换'], ['ai', 'AI 生成'], ['board', '画板绘制']] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="menuitem"
-                  className={page === 'app' && props.sourceMode === id ? 'active' : ''}
-                  onClick={() => { props.switchSourceMode(id); setPage('app'); setMenuOpen(false) }}
-                >
-                  {label}
-                </button>
-              ))}
+              <button type="button" role="menuitem" className={activeMode === 'board' ? 'active' : ''} onClick={() => selectMode('board')}>画板绘制</button>
               <button type="button" role="menuitem" onClick={() => { setPage('app'); setMenuOpen(false); window.setTimeout(() => document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' }), 0) }}>酷图</button>
               <button type="button" role="menuitem" className={page === 'about' ? 'active' : ''} onClick={() => { setPage('about'); setMenuOpen(false) }}>关于</button>
             </div>
@@ -268,7 +273,7 @@ export function MobileLayout(props: MobileLayoutProps) {
         {props.sourceMode !== 'board' && (
           <button className="m-upload" type="button" onClick={props.onPickFile}>
             {props.sourcePreview ? <img src={props.sourcePreview} alt="" /> : <span className="m-plus">+</span>}
-            <b>{props.sourcePreview ? `${props.sourceName} · 点击更换` : '点击选择图片'}</b>
+            <b>{props.sourcePreview ? '点击更换图片' : '点击选择图片'}</b>
             {!props.sourcePreview && <span>支持 JPG / PNG，按原图比例生成</span>}
           </button>
         )}

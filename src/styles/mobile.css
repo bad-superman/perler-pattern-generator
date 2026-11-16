@@ -17,22 +17,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 0 12px;
   background: #fff;
   border-bottom: 1px solid rgba(23, 19, 31, 0.12);
 }
 
-.m-brand { display: flex; align-items: center; gap: 8px; }
-.m-appbar strong { font-size: 16px; color: #17131f; }
+.m-brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.m-appbar strong { font-size: 16px; color: #17131f; white-space: nowrap; }
 .m-menu-btn {
+  flex-shrink: 0;
+  width: 36px;
   height: 36px;
-  padding: 0 14px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border-radius: 18px;
   border: 1px solid rgba(23, 19, 31, 0.12);
   background: #fff;
   color: #17131f;
-  font-size: 13px;
-  font-weight: 700;
 }
 .m-menu-backdrop { position: fixed; inset: 0; z-index: 21; border: 0; background: transparent; }
 .m-menu {
@@ -69,18 +72,29 @@
 
 .m-modes button {
   height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 0;
   border-radius: 16px;
   background: transparent;
   color: #6f647d;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
+/* AI stays tinted while unselected so it reads as an available option. */
+.m-modes .m-mode-ai { color: #6844ec; }
+
 .m-modes button.active {
-  background: #17131f;
+  background: #6844ec;
   color: #fff;
+}
+
+@media (max-width: 359px) {
+  .m-brand strong { display: none; }
 }
 
 .m-card {
@@ -93,6 +107,7 @@
 
 .m-upload {
   width: 100%;
+  min-width: 0;
   height: 148px;
   border-radius: 16px;
   border: 1px dashed rgba(23, 19, 31, 0.28);
@@ -104,6 +119,7 @@
   gap: 6px;
   color: #6f647d;
   font-size: 13px;
+  overflow: hidden;
 }
 
 .m-upload img {
@@ -113,7 +129,12 @@
   border-radius: 8px;
 }
 
-.m-upload b { color: #17131f; font-size: 14px; }
+.m-upload b {
+  max-width: 100%;
+  color: #17131f;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
 
 .m-primary,
 .m-secondary {
