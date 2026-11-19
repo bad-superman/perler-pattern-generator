@@ -1,0 +1,10 @@
+{
+  "name": "perler-pattern-xhs-widget",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-widget.mjs",
+    "check:size": "node scripts/check-size.mjs"
+  }
+}

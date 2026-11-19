@@ -1,0 +1,15 @@
+{
+  "miniprogramRoot": "./dist-xhs",
+  "projectname": "perler-pattern-miniapp",
+  "description": "拼豆图纸生成器小红书小程序",
+  "appid": "touristappid",
+  "libVersion": "3.102.3",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": false
+  },
+  "compileType": "miniprogram"
+}

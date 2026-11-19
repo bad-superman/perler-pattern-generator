@@ -1,0 +1,13 @@
+{
+  "projectname": "perler-pattern-xhs-widget",
+  "description": "拼豆图纸生成器小红书个人小组件",
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  }
+}

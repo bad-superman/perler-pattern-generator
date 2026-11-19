@@ -32,7 +32,7 @@ import {
   limitExportCanvas,
   sanitizeExportFilename,
 } from './pattern/exportSheet'
-import { EMPTY_CELL_HEX, type BeadCell, type PaletteColor } from './pattern/types'
+import { type BeadCell, type PaletteColor } from './pattern/types'
 import {
   DEFAULT_PALETTE_BRAND,
   getPalette,
@@ -42,6 +42,7 @@ import {
   type PaletteBrand,
 } from './palettes'
 import { quantizeToPalette, type DitherMode } from './quantize'
+import { quantizedPatternToSnapshot } from './miniapp/core'
 import { fileTraits, registerContext, track, type PatternTrigger } from './analytics'
 import './App.css'
 import { IS_PRO_SITE } from './config/site'
@@ -452,7 +453,7 @@ function App() {
         dither: quantizeOptions.dither,
         cleanupIsolated: quantizeOptions.cleanupIsolated,
       })
-      const { cols, rows, selected, assignments } = quantized
+      const { cols, rows, selected } = quantized
       setGridCols(cols)
       setGridRows(rows)
       if (updatePreview) {
@@ -461,38 +462,8 @@ function App() {
       }
       if (!selected.length) throw new Error('图片内容太少，无法生成图纸')
 
-      const selectedPalette = selected.map((color) => ({
-        code: color.code,
-        name: color.name,
-        hex: color.hex,
-        count: 0,
-        symbol: color.code,
-      }))
-
-      const grid: BeadCell[][] = []
-      for (let y = 0; y < rows; y += 1) {
-        const row: BeadCell[] = []
-        for (let x = 0; x < cols; x += 1) {
-          const colorIndex = assignments[y * cols + x]
-          if (colorIndex < 0) {
-            row.push({
-              colorIndex: -1,
-              hex: EMPTY_CELL_HEX,
-              symbol: '',
-            })
-            continue
-          }
-          selectedPalette[colorIndex].count += 1
-          row.push({
-            colorIndex,
-            hex: selectedPalette[colorIndex].hex,
-            symbol: selectedPalette[colorIndex].symbol,
-          })
-        }
-        grid.push(row)
-      }
-
-      const usedPalette = selectedPalette.filter((color) => color.count > 0)
+      const snapshot = quantizedPatternToSnapshot(quantized)
+      const { pattern: grid, palette: usedPalette } = snapshot
       resetPatternHistory({
         pattern: grid,
         palette: usedPalette,

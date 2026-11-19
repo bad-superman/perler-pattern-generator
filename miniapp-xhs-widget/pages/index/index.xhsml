@@ -1,0 +1,62 @@
+<scroll-view class="widget-scroll" scroll-y="true" enable-flex="true">
+  <view class="widget-shell">
+    <view class="eyebrow">LOCAL WIDGET · V1</view>
+    <view class="header-row">
+      <view>
+        <text class="title">图片变拼豆图纸</text>
+        <text class="subtitle">本地处理 · 不上传图片</text>
+      </view>
+      <text class="privacy">🔒</text>
+    </view>
+
+    <view class="source-actions" xhs:if="{{!hasResult}}">
+      <button class="primary-button" bindtap="chooseImage">选择图片</button>
+      <button class="secondary-button" bindtap="createBlank">空白画板</button>
+    </view>
+
+    <view class="source-summary" xhs:if="{{sourceName}}">
+      <text class="source-name">{{sourceName}}</text>
+      <text class="source-meta">{{sourceWidth}} × {{sourceHeight}}</text>
+    </view>
+
+    <view class="config-panel" xhs:if="{{panelOpen}}">
+      <view class="panel-title"><text>生成参数</text><text class="panel-caption">快速完成</text></view>
+      <view class="setting-row"><text>画布模式</text><view class="segmented"><button class="segment {{shape === 'square' ? 'selected' : ''}}" data-shape="square" bindtap="setShape">方形</button><button class="segment {{shape === 'ratio' ? 'selected' : ''}}" data-shape="ratio" bindtap="setShape">原比例</button></view></view>
+      <view class="setting-row"><text>尺寸</text><text class="setting-value">{{gridSize}} × {{gridRows}}</text></view>
+      <slider value="{{gridSize}}" min="32" max="80" step="4" activeColor="#7c4dff" bindchanging="onGridChange" />
+      <view class="setting-row"><text>最多颜色</text><text class="setting-value">{{maxColors}} 色</text></view>
+      <slider value="{{maxColors}}" min="4" max="16" step="1" activeColor="#54d4a0" bindchanging="onColorChange" />
+      <button class="generate-button" loading="{{busy}}" disabled="{{busy}}" bindtap="generate">{{busy ? '本地生成中…' : '生成图纸'}}</button>
+    </view>
+
+    <view class="result-panel" xhs:if="{{hasResult}}">
+      <view class="result-header"><text class="result-title">你的图纸</text><text class="badge">{{palette.length}} 色</text></view>
+      <scroll-view class="pattern-scroll" scroll-x="true" scroll-y="true" enhanced="true">
+        <view class="pattern-card" style="width: {{previewWidth}}px; height: {{previewHeight}}px;">
+          <view class="pattern-grid" style="grid-template-columns: repeat({{previewCols}}, 1fr);">
+            <block xhs:for="{{previewCells}}" xhs:key="key">
+              <view class="pattern-cell" data-x="{{item.x}}" data-y="{{item.y}}" style="background: {{item.hex}};" bindtap="tapCell" bindlongtap="eraseCell"></view>
+            </block>
+          </view>
+        </view>
+      </scroll-view>
+      <text class="result-meta">{{resultCols}} × {{resultRows}} · {{mirrored ? '镜像预览' : '原向预览'}}</text>
+      <view class="palette-row">
+        <block xhs:for="{{palettePreview}}" xhs:key="code">
+          <view class="palette-chip"><view class="palette-dot" style="background: {{item.hex}};"></view><text>{{item.code}} ×{{item.count}}</text></view>
+        </block>
+      </view>
+      <view class="toolbar">
+        <button class="tool-button" bindtap="toggleMirror">{{mirrored ? '取消镜像' : '镜像'}}</button>
+        <button class="tool-button" disabled="{{!canUndo}}" bindtap="undo">撤销</button>
+        <button class="tool-button" disabled="{{!canRedo}}" bindtap="redo">重做</button>
+      </view>
+      <button class="save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveImage">{{saving ? '正在保存…' : '保存 PNG 到相册'}}</button>
+      <button class="reset-button" bindtap="resetWidget">重新选择图片</button>
+    </view>
+
+    <view class="hint" xhs:if="{{notice}}">{{notice}}</view>
+    <canvas canvas-id="decode-canvas" class="decode-canvas" disable-scroll="true"></canvas>
+    <canvas canvas-id="export-canvas" class="export-canvas" disable-scroll="true"></canvas>
+  </view>
+</scroll-view>
