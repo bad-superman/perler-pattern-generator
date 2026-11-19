@@ -2,6 +2,8 @@
 
 一个 React 应用，可将上传的图片转换为可打印的拼豆图纸。图像量化在浏览器端通过 Canvas API 完成，默认输出 **MARD 221 国产色号**（如 `A01`、`B12`），侧栏可切换 **Hama** 色卡；HEX 为社区近似值，购料请以实物编号为准。 **AI 生成** 模式通过服务端代理（本地 Node 或 Cloudflare Pages Function）调用大模型。
 
+仓库里还包含一套纯本地的[微信 / 小红书小程序](#小程序微信--小红书)客户端，复用同一套量化算法。
+
 ## 本地开发
 
 ```bash
@@ -34,6 +36,55 @@ npm run preview      # 本地预览生产构建
 默认模型与备用模型都可以通过 `AI_DEFAULT_*` / `AI_FALLBACK_*` 独立配置 provider、Key、地址、模型和超时，详见 [`.env.example`](.env.example)。服务端代码在 [`server/ai/`](server/ai/)，本地代理与 Cloudflare Pages Function 共用。`GET /api/agnes/generate` 会返回当前生效的默认/备用模型（不含密钥），可用于排查配置。
 
 **本地转换** 模式行为不变：上传后直接在浏览器端量化，无需 API Key。
+
+## 小程序（微信 / 小红书）
+
+小程序是纯本地版本：选图或创建空白画板 → 本机量化 → 预览、编辑、导出 PNG。图片不上传，不需要登录、服务器和 API Key，也不包含 AI 生成、图库和付费功能。
+
+### 目录
+
+| 路径 | 说明 |
+|---|---|
+| [`miniapp/`](miniapp/) | Taro 4 + React 18 工程，同一套页面代码构建微信小程序和小红书小程序 |
+| [`miniapp-xhs-widget/`](miniapp-xhs-widget/) | 小红书个人小组件版，使用原生 `xhs` API 的独立工程，说明见其 [README](miniapp-xhs-widget/README.md) |
+| [`src/miniapp/`](src/miniapp/) | 两端共用的核心（量化结果 → 图纸快照）和平台接口类型，设计边界见其 [README](src/miniapp/README.md) |
+| [`src/quantize/rgba.ts`](src/quantize/rgba.ts) | 不依赖 DOM 的 RGBA 量化入口，Web 与小程序共用 |
+
+平台 API 的封装集中在 `miniapp/src/platform/`（选图、Canvas 解码、PNG 导出、保存相册）；画布绘制与手势在 `miniapp/src/components/PatternCanvas.tsx`，缩放 / 平移的纯计算在 `miniapp/src/pattern-view/`。
+
+### 功能
+
+- 从相册或拍照选图，或创建空白画板
+- 图纸尺寸 32–104 格，方形或原比例；最多 4–24 色；MARD 221 色卡
+- 预览：图纸完整居中显示，双指缩放、单指拖动，支持镜像预览
+- 编辑：画布占满屏幕，画笔 / 橡皮可点可拖，移动工具平移，撤销 / 重做（30 步）；选色弹窗先列图纸上的颜色，再列全部 221 色
+- 导出 PNG 到相册：四周带从 0 开始的行列索引，从左上角起每 10 格一条红色辅助线，附色号用量清单
+
+### 构建
+
+```bash
+cd miniapp
+npm install --include=optional
+npm run typecheck
+npm run build:weapp   # 微信小程序 → miniapp/dist
+npm run build:xhs     # 小红书小程序 → miniapp/dist-xhs
+```
+
+开发时可用 `npm run dev:weapp` / `npm run dev:xhs` 监听构建。小红书小组件在仓库根目录执行 `npm run build:xhs-widget`（依赖 `miniapp/node_modules` 里的 esbuild，需先安装 `miniapp/` 的依赖），产物在 `miniapp-xhs-widget/dist`。
+
+### 导入开发者工具
+
+- **微信**：在微信开发者工具中导入 `miniapp/` 目录（`project.config.json` 的 `miniprogramRoot` 指向 `dist/`），并把 `appid` 换成自己的。
+- **小红书**：在小红书 IDE 中导入 `miniapp/dist-xhs/`。
+
+两端产物目录是分开的，不要把小红书产物写进 `dist/`。
+
+### 注意事项
+
+- **保持「将 JS 编译成 ES5」关闭**（`miniapp/project.config.json` 中 `"es6": false`）。Taro 的产物已经是 ES5；开启后开发者工具会再编译一次，iOS 真机调试会在启动时报 `Maximum call stack size exceeded`，随后页面报 `undefined is not an object (evaluating 'd.mw.trigger')`。
+- **画布尺寸只能用 `style` 设置**。页面使用旧版 `canvasId` 画布（小红书的 Taro 模板不支持 Canvas 2D），`width` / `height` 属性不会生效，未设置样式时画布是默认的 300×150，超出部分画不上也读不到。
+- **弹层打开时画布会被隐藏**。旧版画布是原生组件，可能盖在页面弹层之上，所以选色弹窗和「更多」抽屉打开期间画布显示为占位，关闭后重绘。
+- **导出画布有尺寸上限**。导出图按设备像素比等比缩小绘制，使画布长边不超过 3600 物理像素。
 
 ## 部署（Cloudflare Pages，推荐）
 
@@ -308,3 +359,4 @@ sudo systemctl reload nginx
 - Canvas API（图像量化与图纸生成，全部在浏览器端运行）
 - html-to-image + file-saver（导出 PNG）
 - Cloudflare Pages Functions（生产环境 AI 代理，见 `functions/api/agnes/generate.js`）
+- Taro 4 + React 18（微信 / 小红书小程序，见 `miniapp/`）
