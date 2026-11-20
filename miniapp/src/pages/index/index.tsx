@@ -43,9 +43,11 @@ function createBlankSnapshot(cols: number, rows: number): PatternSnapshot {
     selected: [],
     assignments,
   })
+  // Start on black, matching the web blank board; every other colour is reachable from the picker.
+  const starter = BRAND_COLORS.find(([code, name]) => /黑|black/i.test(`${code} ${name}`)) ?? BRAND_COLORS[0]
   return {
     ...blank,
-    palette: BRAND_COLORS.slice(0, 12).map(([code, name, hex]) => ({ code, name, hex, count: 0, symbol: code })),
+    palette: starter ? [{ code: starter[0], name: starter[1], hex: starter[2], count: 0, symbol: starter[0] }] : [],
   }
 }
 
@@ -117,28 +119,53 @@ export default function IndexPage() {
     }
   }
 
+  function openBlankEditor(cols: number, rows: number) {
+    setSnapshot(createBlankSnapshot(cols, rows))
+    setMirrored(false)
+    setPast([])
+    setFuture([])
+    setSelectedPaletteIndex(0)
+    setEditorTool('paint')
+    setOverlay(null)
+    setZoom(100)
+    setStage('edit')
+    setNotice('')
+  }
+
   function startBlankBoard() {
     setSource(null)
     setStage('configure')
-    setNotice('已创建空白画板')
+    setNotice('选择尺寸后进入编辑')
+  }
+
+  async function startDrawingBlank() {
+    const painted = snapshot?.pattern.some((row) => row.some((cell) => cell.colorIndex >= 0)) ?? false
+    if (painted || past.length) {
+      const result = await Taro.showModal({
+        title: '创建新画板',
+        content: '将清空当前图纸，是否继续？',
+        confirmText: '继续',
+      })
+      if (!result.confirm) return
+    }
+    openBlankEditor(gridSize, gridSize)
   }
 
   async function generate() {
+    if (!source?.tempPath) return
     const requestId = generationRef.current + 1
     generationRef.current = requestId
     setStage('processing')
     setNotice('正在本地生成图纸…')
     try {
-      const next = source?.tempPath
-        ? await createPatternSnapshot(source, gridSize, gridRowsFor(source, gridSize, shape), maxColors, shape)
-        : createBlankSnapshot(gridSize, gridSize)
+      const next = await createPatternSnapshot(source, gridSize, gridRowsFor(source, gridSize, shape), maxColors, shape)
       if (requestId !== generationRef.current) return
       setSnapshot(next)
       setMirrored(false)
       setPast([])
       setFuture([])
       setStage('result')
-      setNotice(source ? '生成完成，图片未上传网络' : '空白画板已创建')
+      setNotice('生成完成，图片未上传网络')
     } catch (error) {
       if (requestId !== generationRef.current) return
       console.error(error)
@@ -268,11 +295,11 @@ export default function IndexPage() {
   if (stage === 'configure') {
     return (
       <View className="page-shell">
-        <View className="top-row"><Button className="back-button" onClick={goBack}>返回</Button><Text className="page-heading">生成图纸</Text></View>
-        {source?.tempPath ? <Image className="source-image" src={source.tempPath} mode="aspectFill" /> : <View className="blank-source"><Text>空白画板</Text></View>}
-        <View className="setting-card"><View className="setting-row"><Text>图纸尺寸</Text><Text className="setting-value">{gridSize} × {gridRowsFor(source, gridSize, shape)}</Text></View><Slider value={gridSize} min={32} max={104} step={4} onChanging={(event) => setGridSize(event.detail.value)} activeColor="#7c4dff" /><View className="shape-row"><Button className={shape === 'square' ? 'shape-button active' : 'shape-button'} onClick={() => setShape('square')}>方形</Button><Button className={shape === 'ratio' ? 'shape-button active' : 'shape-button'} disabled={!source} onClick={() => setShape('ratio')}>原比例</Button></View></View>
-        <View className="setting-card"><View className="setting-row"><Text>最多颜色</Text><Text className="setting-value">{maxColors} 色</Text></View><Slider value={maxColors} min={4} max={24} step={1} onChanging={(event) => setMaxColors(event.detail.value)} activeColor="#54d4a0" /></View>
-        <Button className="primary-button" onClick={generate}>开始生成</Button>
+        <View className="top-row"><Button className="back-button" onClick={goBack}>返回</Button><Text className="page-heading">{source ? '生成图纸' : '空白画板'}</Text></View>
+        {source?.tempPath ? <Image className="source-image" src={source.tempPath} mode="aspectFill" /> : <View className="blank-source"><Text>选择尺寸后直接绘制</Text></View>}
+        <View className="setting-card"><View className="setting-row"><Text>图纸尺寸</Text><Text className="setting-value">{gridSize} × {gridRowsFor(source, gridSize, shape)}</Text></View><Slider value={gridSize} min={32} max={104} step={4} onChanging={(event) => setGridSize(event.detail.value)} activeColor="#7c4dff" />{source ? <View className="shape-row"><Button className={shape === 'square' ? 'shape-button active' : 'shape-button'} onClick={() => setShape('square')}>方形</Button><Button className={shape === 'ratio' ? 'shape-button active' : 'shape-button'} onClick={() => setShape('ratio')}>原比例</Button></View> : null}</View>
+        {source ? <View className="setting-card"><View className="setting-row"><Text>最多颜色</Text><Text className="setting-value">{maxColors} 色</Text></View><Slider value={maxColors} min={4} max={24} step={1} onChanging={(event) => setMaxColors(event.detail.value)} activeColor="#54d4a0" /></View> : null}
+        <Button className="primary-button" onClick={source ? generate : () => { void startDrawingBlank() }}>{source ? '开始生成' : '开始绘制'}</Button>
         <Text className="hint">{notice || 'MARD 221 · 方形画布 · 背景保留 · Web 同款量化参数'}</Text>
         <HiddenCanvases exportWidth={exportDimensions.width} exportHeight={exportDimensions.height} />
       </View>
