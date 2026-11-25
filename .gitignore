@@ -18,6 +18,11 @@ dist-ssr
 .worktrees/
 marketing/xiaohongshu/*/video/frames/
 
+# Mini program build output and tool caches (miniapp/dist is covered by `dist`)
+miniapp/dist-xhs/
+miniapp/dist-weapp.stale-*/
+miniapp/.swc/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

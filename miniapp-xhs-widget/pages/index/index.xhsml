@@ -1,0 +1,148 @@
+<view class="edit-shell" xhs:if="{{stage === 'edit'}}" style="height: {{windowHeight}}px;">
+  <view id="edit-canvas-slot" class="edit-canvas-slot" style="top: {{topBarHeight}}px; width: {{canvasWidth}}px; height: {{canvasHeight}}px;">
+    <view xhs:if="{{overlay === 'colors' || canvasHold}}" class="canvas-placeholder" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"></view>
+    <canvas xhs:else canvas-id="edit-canvas" id="edit-canvas" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;" disable-scroll="true" bindtouchstart="onTouchStart" bindtouchmove="onTouchMove" bindtouchend="onTouchEnd" bindtouchcancel="onTouchCancel"></canvas>
+  </view>
+  <cover-view class="edit-top-bar" style="width: {{windowWidth}}px; height: {{topBarHeight}}px;">
+    <cover-view class="edit-top-action primary" bindtap="leaveEdit">完成</cover-view>
+    <cover-view class="edit-top-title">编辑图纸</cover-view>
+    <cover-view class="edit-top-group">
+      <cover-view class="edit-top-action {{canUndo ? '' : 'disabled'}}" bindtap="undo">撤销</cover-view>
+      <cover-view class="edit-top-action {{canRedo ? '' : 'disabled'}}" bindtap="redo">重做</cover-view>
+    </cover-view>
+  </cover-view>
+  <cover-view class="edit-toolbar" style="bottom: 0; width: {{windowWidth}}px; height: {{toolbarHeight}}px;">
+    <cover-view class="tool-item" style="width: {{toolWidth}}px;" bindtap="openColors">
+      <cover-view class="tool-color" style="background: {{activeHex}};"></cover-view>
+      <cover-view class="tool-label">{{activeCode}}</cover-view>
+    </cover-view>
+    <cover-view class="tool-item {{editorTool === 'paint' ? 'active' : ''}}" style="width: {{toolWidth}}px;" bindtap="setPaint">画笔</cover-view>
+    <cover-view class="tool-item {{editorTool === 'erase' ? 'active' : ''}}" style="width: {{toolWidth}}px;" bindtap="setErase">橡皮</cover-view>
+    <cover-view class="tool-item {{editorTool === 'pan' ? 'active' : ''}}" style="width: {{toolWidth}}px;" bindtap="setPan">移动</cover-view>
+    <cover-view class="tool-item" style="width: {{toolWidth}}px;" bindtap="openMore">更多</cover-view>
+  </cover-view>
+  <cover-view xhs:if="{{overlay === 'more'}}" class="drawer-mask" style="position: fixed; left: 0; top: 0; width: {{windowWidth}}px; height: {{windowHeight}}px; background: rgba(23,19,31,0.55); z-index: 80;" bindtap="closeOverlay"></cover-view>
+  <cover-view xhs:if="{{overlay === 'more'}}" style="position: fixed; left: 0; bottom: 0; width: {{windowWidth}}px; height: 192px; background: #ffffff; z-index: 81;">
+    <cover-view style="position: absolute; left: 0; top: 0; width: {{windowWidth}}px; height: 48px; padding: 0; margin: 0; line-height: 48px; text-align: center; font-size: 16px; color: #17131f; background: #ffffff;" bindtap="toggleMirror">{{mirrored ? '取消镜像' : '镜像预览'}}</cover-view>
+    <cover-view style="position: absolute; left: 0; top: 48px; width: {{windowWidth}}px; height: 48px; padding: 0; margin: 0; line-height: 48px; text-align: center; font-size: 16px; color: #17131f; background: #ffffff;" bindtap="fitCanvas">适应屏幕</cover-view>
+    <cover-view style="position: absolute; left: 0; top: 96px; width: {{windowWidth}}px; height: 48px; padding: 0; margin: 0; line-height: 48px; text-align: center; font-size: 16px; color: #17131f; background: #ffffff;" bindtap="saveImage">保存 PNG</cover-view>
+    <cover-view style="position: absolute; left: 0; top: 144px; width: {{windowWidth}}px; height: 48px; padding: 0; margin: 0; line-height: 48px; text-align: center; font-size: 16px; color: #756b82; background: #ffffff;" bindtap="closeOverlay">取消</cover-view>
+  </cover-view>
+  <view class="color-popup" xhs:if="{{overlay === 'colors'}}">
+    <view class="color-popup-head">
+      <view>
+        <text class="color-popup-title">选择颜色</text>
+        <text class="color-popup-current">当前：{{activeCode}}</text>
+      </view>
+      <view class="color-popup-close" bindtap="closeOverlay"><text>关闭</text></view>
+    </view>
+    <scroll-view class="color-popup-body" style="height: {{colorListHeight}}px;" scroll-y="true">
+      <text class="color-popup-section">图纸颜色</text>
+      <view class="color-grid" xhs:if="{{paletteOptions.length}}">
+        <view class="color-swatch {{item.code === activeCode ? 'active' : ''}}" xhs:for="{{paletteOptions}}" xhs:key="code" data-index="{{item.index}}" bindtap="selectPalette">
+          <view class="color-swatch-chip" style="background: {{item.hex}}; color: {{item.ink}};"><text>{{item.code}}</text></view>
+          <text class="color-swatch-count">{{item.count}}</text>
+        </view>
+      </view>
+      <text class="color-popup-empty" xhs:else>图纸上还没有颜色，从下方全部颜色中选一个开始绘制。</text>
+      <text class="color-popup-section">全部颜色</text>
+      <view class="color-grid">
+        <view class="color-swatch {{item.code === activeCode ? 'active' : ''}}" xhs:for="{{brandColors}}" xhs:key="code" data-code="{{item.code}}" bindtap="selectBrand">
+          <view class="color-swatch-chip" style="background: {{item.hex}}; color: {{item.ink}};"><text>{{item.code}}</text></view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>
+
+<scroll-view class="page-scroll" xhs:if="{{stage === 'home'}}" style="height: {{windowHeight}}px;" scroll-y="true">
+  <view class="page-shell">
+    <view class="back-row"><view class="back-button" bindtap="goBack"><text>返回</text></view></view>
+    <view class="eyebrow">LOCAL WIDGET · V1</view>
+    <text class="page-title">把图片变成可以照着做的图纸</text>
+    <text class="page-subtitle">本地处理，不上传图片。生成后还能改色、镜像和保存。</text>
+    <button class="primary-button" bindtap="chooseImage">选择图片生成</button>
+    <button class="secondary-button" bindtap="createBlank">创建空白画板</button>
+    <view class="privacy-card">
+      <text>🔒 图片只在本机处理</text>
+      <text>首发版本不需要登录或服务器</text>
+    </view>
+    <text class="hint" xhs:if="{{notice}}">{{notice}}</text>
+  </view>
+</scroll-view>
+
+<scroll-view class="page-scroll" xhs:if="{{stage === 'configure'}}" style="height: {{windowHeight}}px;" scroll-y="true">
+  <view class="page-shell">
+    <view class="top-row">
+      <view class="back-button" bindtap="goBack"><text>返回</text></view>
+      <text class="page-heading">{{sourceName ? '生成图纸' : '空白画板'}}</text>
+    </view>
+    <image xhs:if="{{sourcePath}}" class="source-image" src="{{sourcePath}}" mode="aspectFill"></image>
+    <view xhs:else class="blank-source"><text>选择尺寸后直接绘制</text></view>
+    <view class="setting-card">
+      <view class="setting-row"><text>图纸尺寸</text><text class="setting-value">{{gridSize}} × {{gridRows}}</text></view>
+      <slider value="{{gridSize}}" min="32" max="104" step="4" activeColor="#7c4dff" bindchanging="onGridChange" />
+      <view class="shape-row" xhs:if="{{sourceName}}">
+        <button class="shape-button {{shape === 'square' ? 'active' : ''}}" data-shape="square" bindtap="setShape">方形</button>
+        <button class="shape-button {{shape === 'ratio' ? 'active' : ''}}" data-shape="ratio" bindtap="setShape">原比例</button>
+      </view>
+    </view>
+    <view class="setting-card" xhs:if="{{sourceName}}">
+      <view class="setting-row"><text>最多颜色</text><text class="setting-value">{{maxColors}} 色</text></view>
+      <slider value="{{maxColors}}" min="4" max="24" step="1" activeColor="#54d4a0" bindchanging="onColorChange" />
+    </view>
+    <button class="primary-button" loading="{{busy}}" disabled="{{busy}}" bindtap="generate">{{sourceName ? '开始生成' : '开始绘制'}}</button>
+    <text class="hint">{{notice || 'MARD 221 · 方形画布 · 背景保留'}}</text>
+  </view>
+</scroll-view>
+
+<view class="page-shell centered" xhs:if="{{stage === 'processing'}}" style="height: {{windowHeight}}px;">
+  <view class="top-row">
+    <view class="back-button" bindtap="goBack"><text>返回</text></view>
+    <text class="page-heading">生成图纸</text>
+  </view>
+  <text class="processing-title">正在生成拼豆图纸</text>
+  <view class="progress-track"><view class="progress-fill"></view></view>
+  <text class="hint">本地采样 → 选色 → 后处理</text>
+</view>
+
+<scroll-view class="page-scroll" xhs:if="{{stage === 'result'}}" style="height: {{windowHeight}}px;" scroll-y="true">
+  <view class="page-shell">
+    <view class="top-row result-top-row">
+      <view class="back-button" bindtap="goBack"><text>返回</text></view>
+      <text class="page-heading">你的拼豆图纸</text>
+      <text class="badge">{{colorCount}} 色</text>
+    </view>
+    <view id="result-canvas-slot" class="pattern-viewport" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;">
+      <canvas xhs:if="{{!canvasHold}}" canvas-id="result-canvas" id="result-canvas" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;" disable-scroll="true" bindtouchstart="onTouchStart" bindtouchmove="onTouchMove" bindtouchend="onTouchEnd" bindtouchcancel="onTouchCancel"></canvas>
+    </view>
+    <view class="zoom-row">
+      <button class="zoom-button" bindtap="zoomOut">−</button>
+      <text class="zoom-value">{{zoomLabel}}</text>
+      <button class="zoom-button" bindtap="zoomIn">＋</button>
+      <button class="zoom-button fit" bindtap="fitCanvas">适应</button>
+    </view>
+    <text class="zoom-hint">双指缩放 · 单指拖动</text>
+    <view class="result-meta"><text>{{resultCols}} × {{resultRows}} · 本地结果</text><text class="muted">{{mirrored ? '镜像预览' : '预览模式'}}</text></view>
+    <view class="palette-card">
+      <view class="section-heading"><text>色号清单</text><text class="muted">用量倒序</text></view>
+      <view class="palette-row">
+        <view class="palette-chip" xhs:for="{{palettePreview}}" xhs:key="code">
+          <view class="palette-dot" style="background: {{item.hex}};"></view>
+          <text>{{item.code}} {{item.count}}</text>
+        </view>
+      </view>
+    </view>
+    <text class="hint" xhs:if="{{notice}}">{{notice}}</text>
+    <button class="mirror-button" bindtap="toggleMirror">{{mirrored ? '取消镜像' : '镜像预览'}}</button>
+    <view class="action-row">
+      <button class="secondary-button half" bindtap="enterEdit">编辑图纸</button>
+      <button class="primary-button half" loading="{{saving}}" disabled="{{saving}}" bindtap="saveImage">{{saving ? '正在保存…' : '保存 PNG'}}</button>
+    </view>
+  </view>
+</scroll-view>
+
+<view class="offscreen-canvas" xhs:if="{{decodeReady || exportReady}}">
+  <canvas xhs:if="{{decodeReady}}" canvas-id="decode-canvas" id="decode-canvas" style="width: 104px; height: 104px;" disable-scroll="true"></canvas>
+  <canvas xhs:if="{{exportReady}}" canvas-id="export-canvas" id="export-canvas" style="width: 500px; height: 500px;" disable-scroll="true"></canvas>
+</view>
