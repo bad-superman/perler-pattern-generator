@@ -6,5 +6,8 @@
   "scripts": {
     "build": "node scripts/build-widget.mjs",
     "check:size": "node scripts/check-size.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
   }
 }

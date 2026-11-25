@@ -14,7 +14,9 @@ await build({
   bundle: true,
   minify: true,
   platform: 'neutral',
-  target: 'es2019',
+  // Upload compilation targets iOS 10 and rewrites async, spread, and
+  // optional chaining into require("@babel/runtime/..."). The phone has no require.
+  target: 'es2016',
   format: 'iife',
   logLevel: 'warning',
 })
