@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Menu, Sparkles } from 'lucide-react'
+import { LoaderCircle, Menu, Sparkles } from 'lucide-react'
 import { BeadLogo } from '../components/BeadLogo'
 import { PatternEditor, type EditorTool } from '../components/PatternEditor'
 import { PatternZoomView } from '../components/PatternZoomView'
@@ -546,8 +546,14 @@ export function MobileLayout(props: MobileLayoutProps) {
       )}
 
       {props.isAiGenerating && (
-        <div className="export-loading-overlay" role="status">
-          <div className="export-loading-card"><strong>{props.aiStage}</strong></div>
+        <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+          <div className="export-loading-card">
+            <div className="export-spinner" aria-hidden="true">
+              <LoaderCircle size={30} />
+            </div>
+            <strong>AI 正在生成图片</strong>
+            <span>{props.aiStage}</span>
+          </div>
         </div>
       )}
     </main>

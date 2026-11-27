@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { ChevronLeft, ChevronRight, Download, Grid3X3, ImageUp, Info, LoaderCircle, Pencil, Printer, Redo2, RotateCcw, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { saveAs } from 'file-saver'
 import { AgnesGenerateError, generateAgnesImages, pickAgnesSize, type AgnesProviderAttempt } from './agnes/client'
@@ -80,6 +81,20 @@ function yieldToPaint() {
       window.requestAnimationFrame(() => resolve())
     })
   })
+}
+
+function PatternProcessingOverlay() {
+  return (
+    <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+      <div className="export-loading-card">
+        <div className="export-spinner" aria-hidden="true">
+          <LoaderCircle size={30} />
+        </div>
+        <strong>正在生成图纸</strong>
+        <span>正在按色卡量化，请稍等一下…</span>
+      </div>
+    </div>
+  )
 }
 
 function readDebugModeFromUrl() {
@@ -447,12 +462,16 @@ function App() {
     // Async action timing; it is not evaluated during render.
     // eslint-disable-next-line react-hooks/purity
     const startedAt = performance.now()
-    setError('')
-    setIsProcessing(true)
     lastSourceFileRef.current = file
     try {
-      const image = await loadImage(file)
+      // Commit the overlay before quantization. The quantize loop blocks the
+      // main thread, so a normal setState can stay unpainted until it finishes.
+      flushSync(() => {
+        setError('')
+        setIsProcessing(true)
+      })
       await yieldToPaint()
+      const image = await loadImage(file)
       const quantizeOptions = quantizeRef.current
       const quantized = quantizeToPalette(image, {
         shape: nextShape,
@@ -1092,6 +1111,7 @@ function App() {
         promoImage={PROMO_AD_IMAGE}
         onPromoClick={() => track('promo_clicked', { placement: 'mobile_carousel' })}
       />
+      {isProcessing && !isAiGenerating && <PatternProcessingOverlay />}
       {shareUi}
       </>
     )
@@ -1529,18 +1549,6 @@ function App() {
 
       <GalleryPage />
 
-      {isProcessing && !isAiGenerating && (
-        <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
-          <div className="export-loading-card">
-            <div className="export-spinner" aria-hidden="true">
-              <LoaderCircle size={30} />
-            </div>
-            <strong>正在生成图纸</strong>
-            <span>正在按色卡量化，请稍等一下…</span>
-          </div>
-        </div>
-      )}
-
       {isAiGenerating && (
         <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
           <div className="export-loading-card">
@@ -1552,6 +1560,8 @@ function App() {
           </div>
         </div>
       )}
+
+      {isProcessing && !isAiGenerating && <PatternProcessingOverlay />}
 
       {isExporting && (
         <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">

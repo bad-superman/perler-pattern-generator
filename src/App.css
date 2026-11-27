@@ -938,7 +938,7 @@ h1 {
 .export-loading-overlay {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 60;
   display: grid;
   place-items: center;
   padding: 24px;
