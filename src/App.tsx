@@ -645,7 +645,7 @@ function App() {
       else track('ai_generate_failed', { ...traits, stage, duration_ms: durationMs })
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'AI 生成失败，请稍后重试'
-      setError(IS_PRO_SITE ? `${message}${cause instanceof AgnesGenerateError && cause.status >= 500 ? '，本次未扣除次数' : ''}` : message)
+      setError(stage === 'generate' ? '生成失败，稍后再试' : message)
       if (IS_PRO_SITE) void paidAccess.refresh()
       if (cause instanceof AgnesGenerateError) trackProviderAttempts(cause.attempts, traits)
       track('ai_generate_failed', {
