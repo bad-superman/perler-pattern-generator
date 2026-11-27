@@ -2,17 +2,18 @@ import { saveAs } from 'file-saver'
 import { isDarkHex } from './color'
 import type { BeadCell, PaletteColor } from './types'
 
-const GUIDE_BLOCK_SIZE = 5
+const EXPORT_GUIDE_BLOCK = 10
 const EXPORT_MARGIN = 32
-const EXPORT_GRID_PAD = 12
-const EXPORT_CELL_GAP = 1
+const EXPORT_HEADER_H = 72
 const EXPORT_CELL_MIN = 14
 const EXPORT_CELL_MAX = 36
+const BROWSER_CANVAS_MAX = 16384
 
-function getExportCellSize(gridCols: number, gridRows: number, maxSide: number) {
+function getExportCellSize(gridCols: number, gridRows: number) {
   const longSide = Math.max(1, gridCols, gridRows)
-  const available = maxSide - EXPORT_MARGIN * 2 - EXPORT_GRID_PAD * 2
-  const fit = Math.floor(available / longSide) - EXPORT_CELL_GAP
+  // Legend height is added under the grid and must not shrink these cells.
+  const gridBudget = BROWSER_CANVAS_MAX - 480
+  const fit = Math.floor(gridBudget / longSide)
   return Math.max(EXPORT_CELL_MIN, Math.min(EXPORT_CELL_MAX, fit))
 }
 
@@ -47,19 +48,6 @@ export function formatExportError(cause: unknown) {
   return '浏览器资源限制或内存不足'
 }
 
-export function limitExportCanvas(source: HTMLCanvasElement, maxSide: number) {
-  const longSide = Math.max(source.width, source.height)
-  if (longSide <= maxSide) return source
-  const scale = maxSide / longSide
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(source.width * scale))
-  canvas.height = Math.max(1, Math.round(source.height * scale))
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return source
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas
-}
-
 export function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png') {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -69,61 +57,8 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png') {
   })
 }
 
-function drawExportGuideLines(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  cellSize: number,
-  gap: number,
-  cols: number,
-  rows: number,
-) {
-  if (cols <= GUIDE_BLOCK_SIZE && rows <= GUIDE_BLOCK_SIZE) return
-
-  const lines: Array<[number, number, number, number]> = []
-  for (let col = GUIDE_BLOCK_SIZE; col < cols; col += GUIDE_BLOCK_SIZE) {
-    const guideX = x + col * cellSize + (col - 0.5) * gap
-    lines.push([guideX, y, guideX, y + height])
-  }
-  for (let row = GUIDE_BLOCK_SIZE; row < rows; row += GUIDE_BLOCK_SIZE) {
-    const guideY = y + row * cellSize + (row - 0.5) * gap
-    lines.push([x, guideY, x + width, guideY])
-  }
-  if (!lines.length) return
-
-  const strokeLines = (lineWidth: number, strokeStyle: string) => {
-    ctx.beginPath()
-    ctx.lineWidth = lineWidth
-    ctx.strokeStyle = strokeStyle
-    ctx.lineCap = 'butt'
-    lines.forEach(([x1, y1, x2, y2]) => {
-      ctx.moveTo(x1, y1)
-      ctx.lineTo(x2, y2)
-    })
-    ctx.stroke()
-  }
-
-  ctx.save()
-  strokeLines(3, 'rgba(255, 255, 255, 0.78)')
-  strokeLines(1, 'rgba(29, 26, 35, 0.78)')
-  ctx.restore()
-}
-
 export function formatLegendLabel(color: Pick<PaletteColor, 'code' | 'name'>) {
   return color.name ? `${color.code} ${color.name}` : color.code
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const radius = Math.min(r, w / 2, h / 2)
-  ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.arcTo(x + w, y, x + w, y + h, radius)
-  ctx.arcTo(x + w, y + h, x, y + h, radius)
-  ctx.arcTo(x, y + h, x, y, radius)
-  ctx.arcTo(x, y, x + w, y, radius)
-  ctx.closePath()
 }
 
 export function buildPatternExportCanvas(
@@ -132,89 +67,121 @@ export function buildPatternExportCanvas(
   gridCols: number,
   gridRows: number,
   activeCells: number,
-  maxSide: number,
   mirrored = false,
 ) {
-  const exportCell = getExportCellSize(gridCols, gridRows, maxSide)
-  const gap = EXPORT_CELL_GAP
-  const gridPad = EXPORT_GRID_PAD
-  const gridInnerW = gridCols * exportCell + Math.max(0, gridCols - 1) * gap
-  const gridInnerH = gridRows * exportCell + Math.max(0, gridRows - 1) * gap
-  const gridW = gridInnerW + gridPad * 2
-  const gridH = gridInnerH + gridPad * 2
+  const cell = getExportCellSize(gridCols, gridRows)
+  const ruler = Math.max(cell, 22)
+  const gridWidth = gridCols * cell
+  const gridHeight = gridRows * cell
+  const frameWidth = gridWidth + ruler * 2
+  const frameHeight = gridHeight + ruler * 2
 
   const legendCols = Math.min(4, Math.max(1, palette.length))
   const legendRows = Math.ceil(palette.length / legendCols)
-  const legendItemW = 240
   const legendItemH = 28
   const legendPad = 24
-  const legendW = legendCols * legendItemW + legendPad * 2
   const legendH = legendRows * legendItemH + legendPad * 2 + 28
+  const contentW = Math.max(frameWidth, 640)
+  const legendItemW = (contentW - legendPad * 2) / legendCols
+  const width = contentW + EXPORT_MARGIN * 2
+  const height = EXPORT_HEADER_H + frameHeight + 24 + legendH + EXPORT_MARGIN
+  const scale = Math.min(1, BROWSER_CANVAS_MAX / Math.max(width, height, 1))
 
-  const margin = EXPORT_MARGIN
-  const headerH = 72
-  const contentW = Math.max(gridW, legendW, 640)
   const canvas = document.createElement('canvas')
-  canvas.width = contentW + margin * 2
-  canvas.height = headerH + gridH + 24 + legendH + margin
-
+  canvas.width = Math.max(1, Math.round(width * scale))
+  canvas.height = Math.max(1, Math.round(height * scale))
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('浏览器不支持 Canvas')
 
+  ctx.scale(scale, scale)
   ctx.fillStyle = '#fffaf1'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, width, height)
 
   ctx.fillStyle = '#1d1a23'
   ctx.font = '700 24px "Noto Sans SC", sans-serif'
-  ctx.fillText('拼豆图纸', margin, margin + 24)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText('拼豆图纸', EXPORT_MARGIN, EXPORT_MARGIN + 24)
   ctx.font = '400 14px "Noto Sans SC", sans-serif'
   ctx.fillStyle = '#6f647d'
   const subtitle = `${gridCols}×${gridRows} · ${activeCells.toLocaleString()} 颗豆 · ${palette.length} 色${mirrored ? ' · 镜像' : ''}`
-  ctx.fillText(subtitle, margin, margin + 48)
+  ctx.fillText(subtitle, EXPORT_MARGIN, EXPORT_MARGIN + 48)
 
-  const gridX = margin + (contentW - gridW) / 2
-  const gridY = headerH
-  ctx.fillStyle = '#2a2633'
-  roundRect(ctx, gridX, gridY, gridW, gridH, 18)
-  ctx.fill()
+  const frameLeft = EXPORT_MARGIN + (contentW - frameWidth) / 2
+  const frameTop = EXPORT_HEADER_H
+  const gridLeft = frameLeft + ruler
+  const gridTop = frameTop + ruler
 
+  ctx.fillStyle = '#e4e1e8'
+  ctx.fillRect(frameLeft, frameTop, frameWidth, frameHeight)
   for (let y = 0; y < gridRows; y += 1) {
     for (let x = 0; x < gridCols; x += 1) {
-      const cell = pattern[y][x]
-      const px = gridX + gridPad + x * (exportCell + gap)
-      const py = gridY + gridPad + y * (exportCell + gap)
-      ctx.fillStyle = cell.hex
-      ctx.fillRect(px, py, exportCell, exportCell)
+      const bead = pattern[y]?.[x]
+      ctx.fillStyle = bead?.hex || '#f3eee5'
+      ctx.fillRect(gridLeft + x * cell, gridTop + y * cell, cell, cell)
     }
   }
-  drawExportGuideLines(
-    ctx,
-    gridX + gridPad,
-    gridY + gridPad,
-    gridInnerW,
-    gridInnerH,
-    exportCell,
-    gap,
-    gridCols,
-    gridRows,
-  )
-  const labelFont = fitExportLabelFont(ctx, palette.map((color) => color.symbol), exportCell)
+
+  ctx.beginPath()
+  for (let x = 0; x <= gridCols; x += 1) {
+    const lineX = gridLeft + x * cell
+    ctx.moveTo(lineX, frameTop)
+    ctx.lineTo(lineX, frameTop + frameHeight)
+  }
+  for (let y = 0; y <= gridRows; y += 1) {
+    const lineY = gridTop + y * cell
+    ctx.moveTo(frameLeft, lineY)
+    ctx.lineTo(frameLeft + frameWidth, lineY)
+  }
+  ctx.strokeStyle = 'rgba(35, 25, 45, 0.22)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+
+  const labelFont = fitExportLabelFont(ctx, palette.map((color) => color.symbol), cell)
   ctx.font = `800 ${labelFont}px "Noto Sans SC", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   for (let y = 0; y < gridRows; y += 1) {
     for (let x = 0; x < gridCols; x += 1) {
-      const cell = pattern[y][x]
-      if (cell.colorIndex < 0 || !cell.symbol) continue
-      const px = gridX + gridPad + x * (exportCell + gap)
-      const py = gridY + gridPad + y * (exportCell + gap)
-      ctx.fillStyle = isDarkHex(cell.hex) ? '#fff' : '#1d1a23'
-      ctx.fillText(cell.symbol, px + exportCell / 2, py + exportCell / 2 + 0.5)
+      const bead = pattern[y]?.[x]
+      if (!bead || bead.colorIndex < 0 || !bead.symbol) continue
+      ctx.fillStyle = isDarkHex(bead.hex) ? '#fff' : '#1d1a23'
+      ctx.fillText(bead.symbol, gridLeft + x * cell + cell / 2, gridTop + y * cell + cell / 2)
     }
   }
 
-  const legendX = margin + (contentW - legendW) / 2
-  const legendY = gridY + gridH + 24
+  const indexDigits = String(Math.max(gridCols, gridRows, 1) - 1).length
+  const indexFont = Math.max(8, Math.min(13, Math.floor((cell - 2) / (0.62 * indexDigits))))
+  ctx.font = `600 ${indexFont}px "Noto Sans SC", sans-serif`
+  ctx.fillStyle = '#4c4254'
+  for (let x = 0; x < gridCols; x += 1) {
+    const centerX = gridLeft + x * cell + cell / 2
+    ctx.fillText(String(x), centerX, frameTop + ruler / 2)
+    ctx.fillText(String(x), centerX, gridTop + gridHeight + ruler / 2)
+  }
+  for (let y = 0; y < gridRows; y += 1) {
+    const centerY = gridTop + y * cell + cell / 2
+    ctx.fillText(String(y), frameLeft + ruler / 2, centerY)
+    ctx.fillText(String(y), gridLeft + gridWidth + ruler / 2, centerY)
+  }
+
+  ctx.beginPath()
+  for (let x = 0; x <= gridCols; x += EXPORT_GUIDE_BLOCK) {
+    const guideX = gridLeft + x * cell
+    ctx.moveTo(guideX, frameTop)
+    ctx.lineTo(guideX, frameTop + frameHeight)
+  }
+  for (let y = 0; y <= gridRows; y += EXPORT_GUIDE_BLOCK) {
+    const guideY = gridTop + y * cell
+    ctx.moveTo(frameLeft, guideY)
+    ctx.lineTo(frameLeft + frameWidth, guideY)
+  }
+  ctx.strokeStyle = '#e5484d'
+  ctx.lineWidth = Math.max(2, Math.round(cell / 10))
+  ctx.stroke()
+
+  const legendX = EXPORT_MARGIN
+  const legendY = frameTop + frameHeight + 24
   ctx.fillStyle = '#1d1a23'
   ctx.font = '700 16px "Noto Sans SC", sans-serif'
   ctx.textAlign = 'left'
@@ -229,6 +196,7 @@ export function buildPatternExportCanvas(
     ctx.fillStyle = color.hex
     ctx.fillRect(x, y + 4, 32, 20)
     ctx.strokeStyle = 'rgba(43, 35, 58, 0.18)'
+    ctx.lineWidth = 1
     ctx.strokeRect(x + 0.5, y + 4.5, 31, 19)
     ctx.fillStyle = isDarkHex(color.hex) ? '#fff' : '#1d1a23'
     ctx.font = '700 10px "Noto Sans SC", sans-serif'

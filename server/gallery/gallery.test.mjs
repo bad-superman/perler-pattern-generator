@@ -71,15 +71,17 @@ test('validateShare rejects anything that is not a site pattern', async () => {
     pattern({ cells: [-1, -1, -1, -1] }),
     pattern({ mirrored: 'yes' }),
   ]
-  const tooMany = pattern({
-    cols: 8,
-    rows: 8,
-    cells: Array.from({ length: 64 }, (_, index) => index % 51),
-  })
-  for (const input of [...cases, tooMany]) {
+  for (const input of cases) {
     const result = await validateShare(input)
     assert.equal(result.ok, false, JSON.stringify(input))
   }
+})
+
+test('validateShare accepts a pattern that uses more than 50 colors', async () => {
+  const cells = Array.from({ length: 64 }, (_, index) => index % 51)
+  const result = await validateShare(pattern({ cols: 8, rows: 8, cells }))
+  assert.equal(result.ok, true)
+  assert.equal(result.value.colorCount, 51)
 })
 
 test('a share stays pending until an admin approves it', async () => {

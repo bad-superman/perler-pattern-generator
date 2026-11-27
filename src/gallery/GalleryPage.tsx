@@ -8,7 +8,6 @@ import {
   formatExportError,
   isAndroidRuntime,
   isAndroidWechatRuntime,
-  limitExportCanvas,
   releaseExportSheetUrl,
   sanitizeExportFilename,
 } from '../pattern/exportSheet'
@@ -107,11 +106,7 @@ function GalleryDetail({ item, onClose }: { item: GalleryItem; onClose: () => vo
       await Promise.all([
         (async () => {
           await document.fonts.ready
-          const maxExportSide = isMobile ? 4096 : 8192
-          const canvas = limitExportCanvas(
-            buildPatternExportCanvas(view.pattern, view.palette, item.cols, item.rows, view.activeCells, maxExportSide, mirrored),
-            maxExportSide,
-          )
+          const canvas = buildPatternExportCanvas(view.pattern, view.palette, item.cols, item.rows, view.activeCells, mirrored)
           const blob = await canvasToBlob(canvas)
           const filename = `拼豆图纸-${sanitizeExportFilename(item.nickname)}.png`
           const delivered = await deliverPatternPng({ blob, filename, mobile: isMobile, existingSheetUrl: sheetUrl })

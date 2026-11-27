@@ -30,7 +30,6 @@ import {
   formatExportError,
   formatLegendLabel,
   isAndroidWechatRuntime,
-  limitExportCanvas,
   releaseExportSheetUrl,
   sanitizeExportFilename,
 } from './pattern/exportSheet'
@@ -67,13 +66,21 @@ function readScreen(): AppScreen {
 const DEFAULT_GRID_SIZE = 52
 const AI_DEFAULT_GRID_SIZE = 52
 const AI_GRID_RECOMMEND_MAX = 56
-const MAX_COLOR_LIMIT = 50
+const DEFAULT_MAX_COLORS = 10
 const PROMO_AD_URL = 'https://p.pinduoduo.com/b5eq4V9Z?sc=EFAC'
 const PROMO_AD_IMAGE = '/promo/pinduoduo-beads.jpeg'
 const HERO_CAROUSEL_INTERVAL_MS = 5000
 const HERO_CAROUSEL_SLIDE_COUNT = 2
 const QUICK_GRID_SIZES = [52, 104, 156, 208] as const
 const BOARD_QUICK_SIZES = QUICK_GRID_SIZES
+
+function yieldToPaint() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve())
+    })
+  })
+}
 
 function readDebugModeFromUrl() {
   if (typeof window === 'undefined') return false
@@ -205,7 +212,7 @@ function App() {
   const [boardRowsInput, setBoardRowsInput] = useState(DEFAULT_GRID_SIZE)
   const [gridCols, setGridCols] = useState(DEFAULT_GRID_SIZE)
   const [gridRows, setGridRows] = useState(DEFAULT_GRID_SIZE)
-  const [maxColors, setMaxColors] = useState(MAX_COLOR_LIMIT)
+  const [maxColors, setMaxColors] = useState(DEFAULT_MAX_COLORS)
   const [shape, setShape] = useState<BoardShape>('ratio')
   const [renderMode, setRenderMode] = useState<RenderMode>(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 620px)').matches ? 'solid' : 'symbols'
@@ -284,7 +291,7 @@ function App() {
   const activePalette = useMemo(() => getPalette(paletteBrand), [paletteBrand])
   const activePaletteColors = useMemo(() => getPaletteColors(paletteBrand), [paletteBrand])
   const activePaletteSize = useMemo(() => getPaletteSize(paletteBrand), [paletteBrand])
-  const colorSliderMax = Math.min(activePaletteSize, MAX_COLOR_LIMIT)
+  const colorSliderMax = activePaletteSize
   const gridSizeHint = useMemo(() => getGridSizeHint(gridSize), [gridSize])
   const replaceAffectedCount = useMemo(
     () => (replaceFromSymbol ? countCellsWithSymbol(pattern, replaceFromSymbol) : 0),
@@ -445,6 +452,7 @@ function App() {
     lastSourceFileRef.current = file
     try {
       const image = await loadImage(file)
+      await yieldToPaint()
       const quantizeOptions = quantizeRef.current
       const quantized = quantizeToPalette(image, {
         shape: nextShape,
@@ -797,7 +805,7 @@ function App() {
       setError('请先完成编辑，再切换色号品牌')
       return
     }
-    const nextMaxColors = Math.min(maxColors, getPaletteSize(brand), MAX_COLOR_LIMIT)
+    const nextMaxColors = Math.min(maxColors, getPaletteSize(brand))
     setPaletteBrand(brand)
     setMaxColors(nextMaxColors)
     void regenerate(gridSize, nextMaxColors, shape, brand, 'palette')
@@ -820,8 +828,7 @@ function App() {
       const exportPalette = [...palette]
         .filter((color) => color.count > 0)
         .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
-      const maxExportSide = isMobile ? 4096 : 8192
-      const canvas = limitExportCanvas(buildPatternExportCanvas(displayPattern, exportPalette, gridCols, gridRows, activeCells, maxExportSide, mirrored), maxExportSide)
+      const canvas = buildPatternExportCanvas(displayPattern, exportPalette, gridCols, gridRows, activeCells, mirrored)
       const blob = await canvasToBlob(canvas)
       const filename = `拼豆图纸-${sanitizeExportFilename(sourceName)}.png`
       const delivered = await deliverPatternPng({
@@ -1521,6 +1528,18 @@ function App() {
       </section>
 
       <GalleryPage />
+
+      {isProcessing && !isAiGenerating && (
+        <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+          <div className="export-loading-card">
+            <div className="export-spinner" aria-hidden="true">
+              <LoaderCircle size={30} />
+            </div>
+            <strong>正在生成图纸</strong>
+            <span>正在按色卡量化，请稍等一下…</span>
+          </div>
+        </div>
+      )}
 
       {isAiGenerating && (
         <div className="export-loading-overlay" role="status" aria-live="polite" aria-busy="true">

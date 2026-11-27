@@ -31,7 +31,6 @@ export async function validateShare(input, paletteSizes = PALETTE_SIZES) {
     if (cell >= 0) used.add(cell)
   }
   if (used.size < 1) return fail('图纸是空的')
-  if (used.size > GALLERY_LIMITS.maxColors) return fail('颜色超过 50 种')
 
   const canonical = { brand, cols, rows, mirrored, cells }
   return {
